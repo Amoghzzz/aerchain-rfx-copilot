@@ -19,13 +19,25 @@ st.title("📦 Aerchain AI RFx Copilot & Vendor Comparison Matrix")
 st.caption("Automated RFx creation, unstructured vendor document extraction, and conversational interrogation.")
 
 # -----------------------------------------------------------------------------
-# 2. VERTEX AI CLIENT INITIALIZATION
+# 2. VERTEX AI CLIENT INITIALIZATION (WITH OAUTH SCOPE FIX)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def get_genai_client():
     # Retrieve service account credentials from Streamlit secrets
     creds_dict = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
-    credentials = service_account.Credentials.from_service_account_info(creds_dict)
+    
+    # Ensure token_uri exists
+    if "token_uri" not in creds_dict:
+        creds_dict["token_uri"] = "https://oauth2.googleapis.com/token"
+
+    # Define mandatory Google Cloud Platform scope
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    # Build OAuth2 credentials with explicit scope
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict,
+        scopes=scopes
+    )
     
     return genai.Client(
         vertexai=True,
@@ -83,7 +95,11 @@ def get_vendor_mock_matrix():
 # -----------------------------------------------------------------------------
 # 4. TABBED INTERFACE
 # -----------------------------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["1️⃣ RFx Setup & Ground Truth", "2️⃣ Ingestion & Side-by-Side Matrix", "3️⃣ Interrogate & Split-Award Analyst"])
+tab1, tab2, tab3 = st.tabs([
+    "1️⃣ RFx Setup & Ground Truth", 
+    "2️⃣ Ingestion & Side-by-Side Matrix", 
+    "3️⃣ Interrogate & Split-Award Analyst"
+])
 
 # -----------------------------------------------------------------------------
 # TAB 1: RFX SETUP
@@ -123,7 +139,6 @@ with tab2:
     
     if uploaded_files:
         st.success(f"Received {len(uploaded_files)} document(s). Processing through Gemini 2.5 Flash multimodal pipeline...")
-        # In a real run, client.models.generate_content would parse these directly.
     
     st.divider()
     st.subheader("Normalized Side-by-Side Comparison")
