@@ -659,7 +659,7 @@ elif st.session_state.stage == "Supplier Responses":
         st.caption("Traceability: PackTech_Email.txt — Line 4")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with v2 := col_b:
+    with col_b:
         st.markdown("<div class='procurement-card'>", unsafe_allow_html=True)
         st.markdown("**AI Extraction Behavior & Refusal** <span class='tag-ai-extracted'>Source: AI extracted</span>", unsafe_allow_html=True)
         st.markdown("""
