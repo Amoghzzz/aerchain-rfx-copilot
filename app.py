@@ -58,7 +58,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom Quiet Design System - Flat & Spacing-First Architecture
 st.markdown("""
     <style>
     /* Base Setup & Background */
@@ -200,7 +199,6 @@ def parse_safe_numeric_price(val):
     except Exception:
         return None
 
-# Clear stale analysis snapshot on material state changes (Point #2)
 def invalidate_analysis_snapshot():
     st.session_state.last_analysis_result = None
     st.session_state.last_analysis_query = None
@@ -327,7 +325,7 @@ def get_supplier_prefabricated_dataset():
             "Apex_Norm_INR": p1_orig,
             "Apex_Status": "CONFIRMED",
             "Apex_Confidence": "98%",
-            "Apex_Source_Ref": "Demo Baseline", # Updated Provenance Default (Point #5)
+            "Apex_Source_Ref": "Demo Baseline",
             
             "BoxCraft_Orig_Price": f"₹{p2_orig:.2f} / pc" if p2_orig else "NOT QUOTED",
             "BoxCraft_Norm_INR": p2_orig,
@@ -480,7 +478,7 @@ def sync_rfq_to_master_matrix():
 sync_rfq_to_master_matrix()
 
 # -----------------------------------------------------------------------------
-# 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE (Points #1, #5)
+# 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE
 # -----------------------------------------------------------------------------
 def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, is_demo_mode):
     if is_demo_mode:
@@ -533,7 +531,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         if norm_col not in df.columns:
             continue
             
-        # P0 FIX: Usable rows strictly require CONFIRMED or NORMALIZED (Excludes REVIEW REQUIRED from totals) (Points #1, #5)
         usable_rows = df[
             df[norm_col].notnull() & 
             df[status_col].isin(["CONFIRMED", "NORMALIZED"])
@@ -546,7 +543,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         total_spend = (usable_rows[norm_col] * usable_rows["Quantity"]).sum()
         is_qual = qualification_status.get(sname, {}).get("qualified", True)
         
-        # P0 FIX: Strict Complete Single Quote Definition: 30/30 quoted + 0 review-required (Points #1, #5)
+        # Complete Single Quote Definition: 30/30 quoted + 0 review-required
         is_complete = (lines_quoted == len(df)) and (not has_missing) and (not has_review)
         
         unquoted_items = []
@@ -878,7 +875,6 @@ elif st.session_state.stage == "Supplier Responses":
             invalidate_analysis_snapshot()
             st.rerun()
 
-    # Strengthened Demo Baseline Mismatch Banner (Point #4)
     if st.session_state.demo_mode and not rfq_matches_demo_baseline():
         st.warning("⚠️ **Demo Baseline Specification Mismatch:** Baseline supplier prices were generated for original canonical RFQ requirements. Revised specifications or quantities may render baseline prices unsuitable for sourcing decisions. Use uploaded supplier responses for revised requirements.")
 
@@ -1259,7 +1255,10 @@ elif st.session_state.stage == "Compare Bids":
         if st.session_state.exception_filter == "Quoted lines with exceptions":
             matrix_display = matrix_display[matrix_display["Line #"].isin(calc["exception_line_numbers"])]
 
-        matrix_display = matrix_display.fillna("—")
+        # CRITICAL FIX: Cast price columns to string before fillna to prevent PyArrow float/string mixed type exception
+        for sname in calc["active_suppliers"]:
+            if sname in matrix_display.columns:
+                matrix_display[sname] = matrix_display[sname].astype(str).replace(["nan", "None", "<NA>"], "—")
 
         def style_matrix_cells(row):
             styles = [''] * len(row)
@@ -1337,6 +1336,14 @@ elif st.session_state.stage == "Analyze & Decide":
     st.markdown("### Scenario analysis")
     st.caption("Evaluate sourcing scenarios using available supplier quote data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.")
 
+    # CRITICAL FIX: Ensure calc engine executes unconditionally at stage entry so 'calc' variable is ALWAYS defined
+    calc = calculate_deterministic_spend_engine(
+        st.session_state.master_matrix,
+        st.session_state.questionnaire_matrix,
+        st.session_state.uploaded_suppliers,
+        st.session_state.demo_mode
+    )
+
     st.markdown("#### Common analyses")
     q_col1, q_col2, q_col3 = st.columns(3)
     prompt_choice = None
@@ -1401,7 +1408,6 @@ elif st.session_state.stage == "Analyze & Decide":
                     )
                     parsed_ans = extract_json_from_response(res.text)
                     
-                    # Store complete analysis snapshot context with timestamp (Points #2, #8)
                     st.session_state.last_analysis_query = user_query
                     st.session_state.last_analysis_result = parsed_ans
                     st.session_state.last_analysis_context = {
@@ -1442,7 +1448,6 @@ elif st.session_state.stage == "Analyze & Decide":
         st.markdown("#### Analysis Result")
         st.markdown(f"### {parsed_ans.get('headline_answer', '')}")
         
-        # Explicit Audit Execution Timestamp (Point #8)
         st.caption(f"Analysis generated: **{ctx.get('timestamp', 'Recent')}** · Dataset: {calc_provenance_str} · {ctx['active_count']} active suppliers · {ctx['line_count']} RFQ lines · Price-only basis")
         
         st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
@@ -1493,7 +1498,6 @@ elif st.session_state.stage == "Analyze & Decide":
                 calc["active_suppliers"]
             ].iloc[0]
             
-            # Dynamic Mixed-UOM Aggregate Safeguard (Point #3)
             rfq_uoms = set(it["UOM"] for it in st.session_state.rfq_data["line_items"])
             if len(rfq_uoms) == 1:
                 single_uom = list(rfq_uoms)[0]
@@ -1564,7 +1568,6 @@ elif st.session_state.stage == "Analyze & Decide":
                 for to in parsed_ans["trade_offs"]:
                     st.markdown(f"* {to}")
                     
-        # Dedicated Data Gap Badge Styling (Point #6)
         if parsed_ans.get("data_gaps"):
             st.markdown("**Data Gaps Identified**")
             for dg in parsed_ans["data_gaps"]:
@@ -1594,7 +1597,6 @@ elif st.session_state.stage == "Analyze & Decide":
 
         if "split" in q_lower or "cheapest" in q_lower:
             st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-            # Explicit Illustrative Title Wording (Point #7)
             st.markdown("#### Illustrative Price-Only Split")
             st.caption("Spend distribution by supplier under lowest unit price allocation — not a final award recommendation. Supplier capacity, freight, lead time and commercial terms are excluded.")
             
@@ -1616,7 +1618,7 @@ elif st.session_state.stage == "Analyze & Decide":
     
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
-    # Clean Audit Provenance Export (Point #5)
+    # Clean Audit Provenance Export
     audit_export_rows = []
     for idx, row in st.session_state.master_matrix.iterrows():
         for sname in calc["active_suppliers"]:
@@ -1631,7 +1633,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 "Normalized Unit Price (INR)": row.get(meta["norm_col"], "—"),
                 "Validation Status": row.get(meta["status_col"], "—"),
                 "Confidence": row.get(meta["conf_col"], "—"),
-                "Source Reference": row.get(meta["source_col"], "Demo Baseline"), # Clear Default Provenance
+                "Source Reference": row.get(meta["source_col"], "Demo Baseline"),
                 "Response Source": "Supplier Submitted" if sname in st.session_state.uploaded_suppliers else "Demo Baseline",
                 "Qualification Status": "Qualified" if calc["qualification_status"][sname]["qualified"] else "Disqualified"
             })
