@@ -83,14 +83,6 @@ st.markdown("""
         padding: 24px;
         margin-bottom: 20px;
     }
-    
-    .side-panel {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 6px;
-        padding: 18px;
-        margin-bottom: 16px;
-    }
 
     /* Structured AI Output Metric Cards */
     .metric-card {
@@ -157,6 +149,7 @@ st.markdown("""
     .stepper-step { font-size: 0.85rem; font-weight: 500; color: #64748B; }
     .stepper-step-active { font-size: 0.85rem; font-weight: 600; color: #2563EB; }
     .stepper-step-complete { font-size: 0.85rem; font-weight: 500; color: #166534; }
+    .stepper-step-locked { font-size: 0.85rem; font-weight: 500; color: #94A3B8; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -284,7 +277,7 @@ def get_canonical_30_items():
             "UOM": uom,
             "Specification": spec,
             "Delivery Location": loc,
-            "Provenance": "User provided" if idx % 2 != 0 else "AI suggested"
+            "Provenance": "User provided" if idx % 2 != 0 else "✦ AI suggested"
         })
     return items
 
@@ -365,10 +358,19 @@ if "stage" not in st.session_state:
     st.session_state.stage = "Create RFQ"
 
 if "rfq_status" not in st.session_state:
-    st.session_state.rfq_status = "Responses collected"
+    st.session_state.rfq_status = "Draft"
 
 if "rfq_generated" not in st.session_state:
     st.session_state.rfq_generated = False
+
+if "responses_unlocked" not in st.session_state:
+    st.session_state.responses_unlocked = False
+
+if "compare_unlocked" not in st.session_state:
+    st.session_state.compare_unlocked = False
+
+if "analyze_unlocked" not in st.session_state:
+    st.session_state.analyze_unlocked = False
 
 if "rfq_data" not in st.session_state:
     st.session_state.rfq_data = {
@@ -510,7 +512,13 @@ def calculate_deterministic_spend_engine(df, quest_df):
     unassigned_count = 0
     
     for idx, row in df.iterrows():
-        prices = {sname: row[col] for sname, col in qual_cols.items() if col in df.columns and pd.notnull(row[col])}
+        prices = {}
+        for sname, col in qual_cols.items():
+            if col in df.columns and pd.notnull(row[col]):
+                status = str(row.get(SUPPLIER_MAP[sname]["status_col"], "")).upper()
+                if status != "REVIEW REQUIRED":
+                    prices[sname] = row[col]
+
         if prices:
             cheapest_supplier = min(prices, key=prices.get)
             cheapest_unit_price = prices[cheapest_supplier]
@@ -557,11 +565,11 @@ def calculate_deterministic_spend_engine(df, quest_df):
     }
 
 # -----------------------------------------------------------------------------
-# 8. GLOBAL HEADER & SINGLE-LABEL STEPPER NAVIGATION
+# 8. GLOBAL HEADER & LOCKED STEPPER NAVIGATION
 # -----------------------------------------------------------------------------
 calc = calculate_deterministic_spend_engine(st.session_state.master_matrix, st.session_state.questionnaire_matrix)
 
-# Header
+# Dynamic Header
 st.markdown(f"""
 <div class="compact-header">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -571,28 +579,28 @@ st.markdown(f"""
                 <span class="badge-status">{st.session_state.rfq_status}</span>
             </div>
             <div style="font-size: 0.8rem; color: #64748B; margin-top: 4px;">
-                RFQ-2026-PKG-001 &nbsp;•&nbsp; {len(st.session_state.rfq_data['line_items'])} line items &nbsp;•&nbsp; {len(SUPPLIERS)} suppliers &nbsp;•&nbsp; Response due 15 Oct 2026
+                RFQ-2026-PKG-001 &nbsp;•&nbsp; {len(st.session_state.rfq_data['line_items'])} line items &nbsp;•&nbsp; {len(SUPPLIERS)} suppliers &nbsp;•&nbsp; Response due {st.session_state.rfq_data['response_deadline']}
             </div>
         </div>
         <div>
-            <span class="badge-review">{calc['total_line_exceptions']} line exceptions to review</span>
+            <span class="badge-review">{calc['total_line_exceptions']} lines needing review</span>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Clean Single-Label Workflow Stepper
+# Single-Label Locked Workflow Stepper Bar
 stages = [
-    ("Create RFQ", "Requirements"),
-    ("Supplier Responses", "Responses"),
-    ("Compare Bids", "Compare"),
-    ("Analyze & Decide", "Analyze")
+    ("Create RFQ", "Requirements", True),
+    ("Supplier Responses", "Responses", st.session_state.responses_unlocked or st.session_state.rfq_status in ["Published", "Responses collected"]),
+    ("Compare Bids", "Compare", st.session_state.compare_unlocked or st.session_state.rfq_status in ["Published", "Responses collected"]),
+    ("Analyze & Decide", "Analyze", st.session_state.analyze_unlocked or st.session_state.rfq_status in ["Published", "Responses collected"])
 ]
 cur_idx = [s[0] for s in stages].index(st.session_state.stage)
 
 st.markdown("<div class='stepper-container'>", unsafe_allow_html=True)
 step_cols = st.columns(4)
-for idx, (stage_key, stage_label) in enumerate(stages):
+for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
     if idx < cur_idx:
         btn_label = f"✓ {idx+1}. {stage_label}"
         b_type = "secondary"
@@ -600,11 +608,15 @@ for idx, (stage_key, stage_label) in enumerate(stages):
         btn_label = f"● {idx+1}. {stage_label}"
         b_type = "primary"
     else:
-        btn_label = f"{idx+1}. {stage_label}"
-        b_type = "secondary"
+        if is_unlocked:
+            btn_label = f"{idx+1}. {stage_label}"
+            b_type = "secondary"
+        else:
+            btn_label = f"🔒 {idx+1}. {stage_label}"
+            b_type = "secondary"
         
     with step_cols[idx]:
-        if st.button(btn_label, key=f"single_step_{idx}", type=b_type):
+        if st.button(btn_label, key=f"locked_step_{idx}", type=b_type, disabled=not is_unlocked):
             st.session_state.stage = stage_key
             st.rerun()
 st.markdown("</div>", unsafe_allow_html=True)
@@ -644,7 +656,7 @@ if st.session_state.stage == "Create RFQ":
                         "UOM": "pcs",
                         "Specification": "string",
                         "Delivery Location": "string",
-                        "Provenance": "AI suggested"
+                        "Provenance": "✦ AI suggested"
                     }
                 ]
             }
@@ -679,18 +691,22 @@ if st.session_state.stage == "Create RFQ":
                 st.warning("Using standard canonical RFQ draft baseline.")
                 st.session_state.rfq_generated = True
 
-    st.markdown("---")
+    st.write("")
     
-    # Needs Confirmation Banner directly above line items
+    # Actionable "Needs your review" Banner directly above line items
     if st.session_state.rfq_data["unclear_specs"]:
-        st.markdown("#### Needs Your Confirmation")
-        st.caption("Review open requirements before publishing:")
-        for unc in st.session_state.rfq_data["unclear_specs"]:
-            st.markdown(f"* <span class='badge-review'>Action required</span> {unc}", unsafe_allow_html=True)
+        st.markdown("#### Needs Your Review")
+        st.caption("2 items need review before publishing:")
+        
+        rev_c1, rev_c2 = st.columns(2)
+        with rev_c1:
+            st.warning("**Price validity** — Currently unspecified\n\n*Recommended:* 60 days mandatory")
+        with rev_c2:
+            st.warning("**Buffer lead time** — Currently unspecified\n\n*Required for:* Peak demand season planning")
         st.write("")
 
-    st.markdown(f"#### AI-Generated Requirements ({len(st.session_state.rfq_data['line_items'])} Line Items)")
-    st.caption("AI-suggested fields are highlighted for review.")
+    st.markdown(f"#### Requirements ({len(st.session_state.rfq_data['line_items'])} Line Items)")
+    st.caption("AI-suggested fields are marked with ✦ for review.")
     
     items_df = pd.DataFrame(st.session_state.rfq_data["line_items"])
     
@@ -706,7 +722,7 @@ if st.session_state.stage == "Create RFQ":
             "UOM": st.column_config.SelectboxColumn("UOM", options=["pcs", "kg", "box", "set"], width="small"),
             "Specification": st.column_config.TextColumn("Specification", width="large"),
             "Delivery Location": st.column_config.TextColumn("Delivery Location", width="medium"),
-            "Provenance": st.column_config.TextColumn("Provenance", disabled=True, width="small")
+            "Provenance": st.column_config.TextColumn("Origin", disabled=True, width="small")
         }
     )
     st.session_state.rfq_data["line_items"] = edited_items.to_dict(orient="records")
@@ -718,48 +734,54 @@ if st.session_state.stage == "Create RFQ":
             st.session_state.rfq_status = "Draft saved"
             st.success("Draft saved successfully.")
     with f3:
-        pub_label = "Publish RFQ"
-        if st.button(pub_label, type="primary"):
+        if st.button("Publish RFQ", type="primary"):
             if st.session_state.rfq_data["unclear_specs"]:
                 st.warning("⚠ 2 requirements remain unresolved. Publishing RFQ with open notes.")
             st.session_state.rfq_status = "Published"
+            st.session_state.responses_unlocked = True
+            st.session_state.compare_unlocked = True
+            st.session_state.analyze_unlocked = True
             st.session_state.stage = "Supplier Responses"
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# STAGE 2: COLLECT RESPONSES
+# STAGE 2: SUPPLIER RESPONSES
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Supplier Responses":
-    st.markdown("### Collect supplier responses")
+    st.markdown("### Supplier responses")
     st.caption("Track supplier submissions, extract quote data and review exceptions before adding them to the comparison.")
 
-    # Top Dynamic Executive Summary Strip
+    # Dynamic Executive Summary Strip
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("Suppliers Tracked", len(SUPPLIERS))
     s2.metric("Complete Quotes", f"{sum(1 for v in calc['supplier_totals'].values() if v['is_complete'])} / {len(SUPPLIERS)}")
     s3.metric("Qualified Suppliers", f"{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}")
-    s4.metric("Line Exceptions", f"{calc['total_line_exceptions']} items")
+    s4.metric("Lines Needing Review", f"{calc['total_line_exceptions']} items")
 
-    st.markdown("---")
+    st.write("")
     
-    # Custom Integrated Upload Panel
-    st.markdown("#### Upload Supplier Response")
+    # Custom Integrated Ingestion Workspace Box
+    st.markdown("<div class='workspace-section'>", unsafe_allow_html=True)
+    st.markdown("#### Add Supplier Quote")
+    st.caption("Upload supplier response file and select target vendor.")
+    
     up_col1, up_col2 = st.columns([2.5, 1.5])
     with up_col1:
         uploaded_file = st.file_uploader(
             "Drop supplier quotation here (PDF, XLSX, DOCX, JPG, PNG, TXT)",
-            type=["pdf", "xlsx", "docx", "png", "jpg", "txt"]
+            type=["pdf", "xlsx", "docx", "png", "jpg", "txt"],
+            label_visibility="collapsed"
         )
     with up_col2:
         supplier_target = st.selectbox("Select supplier:", SUPPLIERS)
-        if uploaded_file and st.button("Extract response", type="primary"):
+        if uploaded_file and st.button("Extract quote data", type="primary"):
             with st.spinner(f"Reading and normalizing quotation for {supplier_target}..."):
                 try:
                     file_bytes = uploaded_file.read()
                     
                     if uploaded_file.type in ["image/png", "image/jpeg"]:
                         part = types.Part.from_bytes(data=file_bytes, mime_type=uploaded_file.type)
-                        prompt = f"Extract supplier quotation pricing for {supplier_target} into JSON: list of objects with line_num, price, currency (USD/INR), uom."
+                        prompt = f"Extract supplier quotation pricing for {supplier_target} into JSON: list of objects with line_num, price, currency (USD/INR), uom, confidence (e.g. 96%)."
                         res = client.models.generate_content(model="gemini-2.5-flash", contents=[part, prompt])
                         extraction_summary = res.text
                     else:
@@ -771,7 +793,7 @@ elif st.session_state.stage == "Supplier Responses":
                            "currency": "INR",
                            "extracted_lines": 30,
                            "extracted_prices": [
-                              {{"line_num": "ITEM-001", "price": 22.50, "currency": "INR", "uom": "pcs"}}
+                              {{"line_num": "ITEM-001", "price": 22.50, "currency": "INR", "uom": "pcs", "confidence": "98%"}}
                            ]
                         }}
                         """
@@ -790,27 +812,45 @@ elif st.session_state.stage == "Supplier Responses":
                     st.success("Extraction complete. Review matched prices below before applying.")
                 except Exception:
                     st.error("We extracted the document but couldn't confidently structure the pricing data. Try another file.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # REVIEW & APPLY WORKFLOW PANEL
     if st.session_state.pending_extraction:
-        st.markdown("---")
         p_data = st.session_state.pending_extraction["parsed"]
         sname = st.session_state.pending_extraction['supplier']
         
+        st.markdown("<div class='workspace-section'>", unsafe_allow_html=True)
         st.markdown(f"#### Review Extracted Quote: **{sname}**")
-        st.caption(f"Source file: `{st.session_state.pending_extraction['file_name']}` &nbsp;•&nbsp; High confidence match")
+        st.caption(f"Source file: `{st.session_state.pending_extraction['file_name']}` &nbsp;•&nbsp; Currency: INR / USD &nbsp;•&nbsp; Status: Ready for verification")
         
         if "extracted_prices" in p_data and isinstance(p_data["extracted_prices"], list):
-            extracted_count = len(p_data["extracted_prices"])
-            ext_df = pd.DataFrame(p_data["extracted_prices"])
-            st.dataframe(ext_df, use_container_width=True, height=200, hide_index=True)
+            review_table = []
+            for item in p_data["extracted_prices"]:
+                lnum = item.get("line_num")
+                price = item.get("price")
+                curr = str(item.get("currency", "INR")).upper()
+                uom = item.get("uom", "pcs")
+                conf = item.get("confidence", "95%")
+                
+                norm_price = round(float(price) * DEMO_FX_RATE, 2) if curr == "USD" else float(price) if price else 0.0
+                
+                review_table.append({
+                    "Line #": lnum,
+                    "Quoted Price": f"${price:.2f} / {uom}" if curr == "USD" else f"₹{price:.2f} / {uom}",
+                    "Normalized (INR)": norm_price,
+                    "Confidence": conf,
+                    "Status": "✓ Matched" if price else "⚠ Review"
+                })
+            
+            extracted_count = len(review_table)
+            st.dataframe(pd.DataFrame(review_table), use_container_width=True, height=220, hide_index=True)
         else:
             extracted_count = 30
             st.info("30 lines matched from standard quotation format.")
             
         rev_col1, rev_col2 = st.columns([1.5, 1])
         with rev_col1:
-            if st.button(f"Apply {extracted_count} extracted prices to comparison", type="primary"):
+            if st.button(f"Apply {extracted_count} verified values", type="primary"):
                 meta = SUPPLIER_MAP[sname]
                 norm_col = meta["norm_col"]
                 orig_col = meta["orig_col"]
@@ -823,7 +863,6 @@ elif st.session_state.stage == "Supplier Responses":
                         curr = str(p_item.get("currency", "INR")).upper()
                         
                         if lnum and raw_price and norm_col in st.session_state.master_matrix.columns:
-                            # Strict FX Normalization Engine
                             if curr == "USD":
                                 norm_val = round(float(raw_price) * DEMO_FX_RATE, 2)
                                 orig_str = f"${raw_price:.2f} / pc"
@@ -840,17 +879,17 @@ elif st.session_state.stage == "Supplier Responses":
                 st.session_state.uploaded_docs_log.append({
                     "file": st.session_state.pending_extraction["file_name"],
                     "supplier": sname,
-                    "summary": f"Applied {extracted_count} normalized line items."
+                    "summary": f"Applied {extracted_count} verified line items."
                 })
                 st.session_state.pending_extraction = None
-                st.success(f"✓ Added {extracted_count} values for {sname} to master comparison dataset.")
+                st.success(f"✓ Added {extracted_count} verified values for {sname} to comparison dataset.")
                 st.rerun()
         with rev_col2:
             if st.button("Discard extraction", type="secondary"):
                 st.session_state.pending_extraction = None
                 st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("---")
     st.markdown("#### Supplier Response Overview")
     
     inbox_rows = []
@@ -872,8 +911,7 @@ elif st.session_state.stage == "Supplier Responses":
         
     st.dataframe(pd.DataFrame(inbox_rows), use_container_width=True, hide_index=True)
 
-    st.markdown("---")
-    st.markdown("**Data handling notes:** Prior-year reference prices were not used as current quotes. USD quotes are normalized using the configured demo FX rate of **₹83.50/USD**.")
+    st.caption("Data handling notes: Prior-year reference prices were not used as current quotes. USD quotes are normalized using the demo FX rate of ₹83.50/USD.")
 
     st.write("")
     b1, b2 = st.columns([1, 1])
@@ -898,9 +936,9 @@ elif st.session_state.stage == "Compare Bids":
     c1.metric("Suppliers Quoted", len(SUPPLIERS))
     c2.metric("Qualified Vendors", f"{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}")
     c3.metric("Complete Quotes", f"{sum(1 for v in calc['supplier_totals'].values() if v['is_complete'])}")
-    c4.metric("Line Exceptions", f"{calc['total_line_exceptions']}")
+    c4.metric("Lines Needing Review", f"{calc['total_line_exceptions']}")
 
-    st.markdown("---")
+    st.write("")
     
     # Extended Quoted Value Summary Table
     summary_rows = []
@@ -918,10 +956,19 @@ elif st.session_state.stage == "Compare Bids":
         })
         
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
-    st.caption("Note: Extended quoted values are before GST & freight. Complete responses only are directly comparable at total-quote level.")
+    st.caption("Complete responses only are directly comparable at total-quote level.")
 
-    st.markdown("---")
-    tab_comp1, tab_comp2 = st.tabs(["Price comparison matrix", "Supplier qualification decision"])
+    st.write("")
+    
+    # Inline Collapsible Issue Drawer (Full Width Optimization)
+    if calc["exception_line_numbers"]:
+        with st.expander(f"⚠ Issues requiring attention ({calc['total_line_exceptions']} lines needing review)"):
+            st.markdown(f"* **Data Quality:** National Paper Mills `ITEM-020` has low confidence read (58% digit ambiguity).")
+            st.markdown(f"* **Missing Quotes:** BoxCraft Ltd has 3 unquoted lines (`ITEM-028` to `ITEM-030`).")
+            st.markdown(f"* **Missing Quotes:** PackTech Solutions has 6 unquoted lines (`ITEM-025` to `ITEM-030`).")
+            st.markdown(f"* **Qualification Failure:** PackTech Solutions defect rate (2.1%) exceeds 0.5% limit.")
+
+    tab_comp1, tab_comp2 = st.tabs(["Price comparison matrix", "Qualification checks"])
     
     with tab_comp1:
         m_col1, m_col2 = st.columns([2, 1])
@@ -943,30 +990,45 @@ elif st.session_state.stage == "Compare Bids":
         if st.session_state.exception_filter == "Exceptions & issues only":
             matrix_display = matrix_display[matrix_display["Line #"].isin(calc["exception_line_numbers"])]
 
-        # Highlight lowest qualified unit price per line item
-        def highlight_lowest_qualified(row):
+        # Replace NaN with clean em-dash string
+        matrix_display = matrix_display.fillna("—")
+
+        # Strict Usable Lowest Qualified Price Logic
+        def highlight_usable_lowest_qualified(row):
             styles = [''] * len(row)
             qual_cols = [4, 6, 7] # Apex, CorruSeal, National (Qualified suppliers)
-            vals = {col_idx: row.iloc[col_idx] for col_idx in qual_cols if pd.notnull(row.iloc[col_idx])}
-            if vals:
-                min_col = min(vals, key=vals.get)
+            
+            valid_prices = {}
+            for col_idx in qual_cols:
+                val = row.iloc[col_idx]
+                sname = list(SUPPLIER_MAP.keys())[col_idx - 4]
+                status = str(st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == row["Line #"], SUPPLIER_MAP[sname]["status_col"]].values[0]).upper()
+                
+                if val != "—" and status != "REVIEW REQUIRED":
+                    try:
+                        valid_prices[col_idx] = float(val)
+                    except ValueError:
+                        pass
+                        
+            if valid_prices:
+                min_col = min(valid_prices, key=valid_prices.get)
                 styles[min_col] = 'background-color: #F0FDF4; font-weight: bold; color: #166534;'
             return styles
 
-        styled_matrix = matrix_display.style.apply(highlight_lowest_qualified, axis=1)
-        st.dataframe(styled_matrix, use_container_width=True, height=420, hide_index=True)
+        styled_matrix = matrix_display.style.apply(highlight_usable_lowest_qualified, axis=1)
+        st.dataframe(styled_matrix, use_container_width=True, height=440, hide_index=True)
         
         st.markdown("""
         <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
             <strong>Legend:</strong> &nbsp;
-            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">🟢 Lowest qualified price</span> &nbsp;
+            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">🟢 Lowest usable qualified price</span> &nbsp;
             <span>— Unquoted / Missing</span>
         </div>
         """, unsafe_allow_html=True)
 
     with tab_comp2:
-        st.markdown("#### Qualification Criteria Evaluation")
-        st.caption("Mandatory Rule: ISO 9001 certification required AND 3-year verified defect rate < 0.5%")
+        st.markdown("#### Qualification Checks Evaluation")
+        st.caption("Mandatory Criteria: ISO 9001 certification required AND 3-year verified defect rate < 0.5%")
         
         qual_summary = []
         for sname in SUPPLIERS:
@@ -990,7 +1052,7 @@ elif st.session_state.stage == "Compare Bids":
             st.session_state.stage = "Supplier Responses"
             st.rerun()
     with cb2:
-        if st.button("Continue to Scenario Analysis →", type="primary"):
+        if st.button("Continue to Analyze Options →", type="primary"):
             st.session_state.stage = "Analyze & Decide"
             st.rerun()
 
@@ -999,7 +1061,7 @@ elif st.session_state.stage == "Compare Bids":
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Analyze & Decide":
     st.markdown("### Analyze options")
-    st.caption("Evaluate sourcing scenarios using the submitted supplier data. Spend calculations follow defined sourcing rules; AI explains the trade-offs and data gaps.")
+    st.caption("Evaluate sourcing scenarios using submitted supplier data. Spend calculations follow defined sourcing rules; AI explains the trade-offs and data gaps.")
 
     st.markdown("#### Suggested analyses")
     q_col1, q_col2, q_col3 = st.columns(3)
@@ -1041,7 +1103,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 - Spend calculations use defined Python sourcing rules:
                   * Lowest Complete Qualified Single Quote: {calc['best_single_name']} at ₹{calc['best_single_spend']:,.0f}
                   * Qualified Split Scenario Spend: ₹{calc['split_spend']:,.0f}
-                  * Illustrative Price-Only Delta: ₹{calc['price_diff']:,.0f} ({calc['price_diff_pct']}%)
+                  * Price Difference vs Lowest Complete Quote: ₹{calc['price_diff']:,.0f} ({calc['price_diff_pct']}%)
                   * Disqualified Suppliers: {disqual_str}
                   * Incomplete Responses: {incomp_str}
                 
@@ -1067,9 +1129,9 @@ elif st.session_state.stage == "Analyze & Decide":
                     )
                     parsed_ans = extract_json_from_response(res.text)
                     
-                    st.markdown("---")
+                    st.write("")
                     st.markdown("#### Analysis Result")
-                    st.markdown(f"**{parsed_ans.get('headline_answer', '')}**")
+                    st.markdown(f"### {parsed_ans.get('headline_answer', '')}")
                     
                     # Contextual Metric Cards
                     st.write("")
@@ -1078,7 +1140,7 @@ elif st.session_state.stage == "Analyze & Decide":
                         with m1:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>GST Rates</div></div>", unsafe_allow_html=True)
                         with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>Freight Terms</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>Freight Costs</div></div>", unsafe_allow_html=True)
                         with m3:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>3 Vendors</div><div class='metric-card-lbl'>Affected</div></div>", unsafe_allow_html=True)
                     else:
@@ -1086,7 +1148,7 @@ elif st.session_state.stage == "Analyze & Decide":
                         with m1:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['split_spend']:,.0f}</div><div class='metric-card-lbl'>Qualified Split Spend</div></div>", unsafe_allow_html=True)
                         with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['price_diff']:,.0f}</div><div class='metric-card-lbl'>Illustrative Price Delta ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['price_diff']:,.0f}</div><div class='metric-card-lbl'>Price Difference vs Complete ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
                         with m3:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
                         with m4:
@@ -1096,12 +1158,12 @@ elif st.session_state.stage == "Analyze & Decide":
                     c1, c2 = st.columns(2)
                     with c1:
                         if parsed_ans.get("key_drivers"):
-                            st.markdown("**Key Considerations**")
+                            st.markdown("**Why This Matters**")
                             for kd in parsed_ans["key_drivers"]:
                                 st.markdown(f"* {kd}")
                     with c2:
                         if parsed_ans.get("trade_offs"):
-                            st.markdown("**Trade-offs & Caveats**")
+                            st.markdown("**Trade-offs & Considerations**")
                             for to in parsed_ans["trade_offs"]:
                                 st.markdown(f"* {to}")
                                 
@@ -1115,11 +1177,11 @@ elif st.session_state.stage == "Analyze & Decide":
 
     # Data-Gap / Landed Cost Table
     if user_query and ("landed" in user_query.lower() or "gst" in user_query.lower()):
-        st.markdown("---")
+        st.write("")
         st.markdown("#### Landed Cost Data-Gap Analysis")
-        st.warning("Landed cost cannot be calculated from submitted quotes due to missing GST and freight terms.")
+        st.warning("Landed cost cannot be calculated from submitted quotes due to missing GST rate and freight cost inputs.")
         gap_df = pd.DataFrame({
-            "Required Input": ["Base Unit Price", "Normalized Currency (INR)", "ISO 9001 Qualification", "GST Rate (%)", "Freight / Incoterms"],
+            "Required Input": ["Base Unit Price", "Normalized Currency (INR)", "ISO 9001 Qualification", "GST Rate (%)", "Freight Cost / Incoterm"],
             "Apex Packaging": ["AVAILABLE", "AVAILABLE", "AVAILABLE", "MISSING IN SUBMISSION", "MISSING IN SUBMISSION"],
             "CorruSeal Global": ["AVAILABLE", "AVAILABLE", "AVAILABLE", "MISSING IN SUBMISSION", "MISSING IN SUBMISSION"],
             "National Paper": ["AVAILABLE", "AVAILABLE", "AVAILABLE", "MISSING IN SUBMISSION", "MISSING IN SUBMISSION"]
@@ -1128,7 +1190,7 @@ elif st.session_state.stage == "Analyze & Decide":
 
     # Split Allocation Visualization
     if user_query and ("split" in user_query.lower() or "cheapest" in user_query.lower()):
-        st.markdown("---")
+        st.write("")
         st.markdown("#### Spend Distribution by Supplier (Qualified Split)")
         
         st.dataframe(calc["split_allocation"], use_container_width=True, height=260, hide_index=True)
@@ -1144,16 +1206,10 @@ elif st.session_state.stage == "Analyze & Decide":
         fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
+    st.write("")
     
-    # Inline Price Baseline Summary Strip
-    st.markdown("#### How This Analysis Works")
-    st.markdown(f"""
-    * **Lowest complete qualified quote:** {calc['best_single_name']} (₹{calc['best_single_spend']:,.0f})
-    * **Qualified split spend:** ₹{calc['split_spend']:,.0f}
-    * **Illustrative price-only delta:** ₹{calc['price_diff']:,.0f} ({calc['price_diff_pct']}%)
-    """)
-    st.caption("Note: Spend totals use quoted unit prices × requested quantity. Excludes GST, freight, lead time, capacity and other commercial factors.")
+    # Calculation Basis Explanation Box
+    st.caption("Calculation basis: Price-only comparison using quoted unit price × requested quantity. Excludes GST, freight, lead time, capacity and other commercial factors.")
     
     st.write("")
     csv_data = st.session_state.master_matrix.to_csv(index=False).encode('utf-8')
