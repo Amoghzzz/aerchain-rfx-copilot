@@ -6,22 +6,22 @@ from google.oauth2 import service_account
 from google.genai import types
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & MASTER SAAS STYLING
+# 1. PAGE CONFIGURATION & LIGHT ENTERPRISE DESIGN SYSTEM
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Aerchain | AI Procurement Workspace",
+    page_title="Aerchain | RFx Workspace",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Custom High-Contrast Enterprise CSS
+# Enterprise Light Theme Styling
 st.markdown("""
     <style>
-    /* Dark Slate Base Theme */
+    /* Global Base */
     .stApp {
-        background-color: #0f172a;
-        color: #f8fafc;
+        background-color: #f8fafc;
+        color: #0f172a;
     }
     
     /* Hide Default Sidebar */
@@ -29,62 +29,70 @@ st.markdown("""
         display: none;
     }
     
-    /* Top Navigation Header */
-    .nav-header {
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 10px;
+    /* Top Header Bar */
+    .top-bar {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
         padding: 16px 24px;
-        margin-bottom: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     
-    /* Stage Navigation Radio Styling */
+    /* Stage Radio Button Tabs Styling */
     div[data-testid="stHorizontalBlock"] {
         align-items: center;
     }
     
-    /* Button Customization - Ensure Crisp Dark Text on Light Buttons */
+    /* Button Styling */
     .stButton>button {
-        background-color: #38bdf8 !important;
-        color: #0f172a !important;
-        font-weight: 700 !important;
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
         border-radius: 6px !important;
         border: none !important;
-        padding: 10px 18px !important;
+        padding: 8px 16px !important;
         width: 100%;
     }
     .stButton>button:hover {
-        background-color: #7dd3fc !important;
-        color: #0f172a !important;
+        background-color: #0369a1 !important;
+        color: #ffffff !important;
     }
 
-    /* Exception & Alert Badges */
+    /* Enterprise Status Cards */
+    .status-card {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+    }
+    .badge-ok {
+        color: #15803d;
+        background-color: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
     .badge-warn {
-        background-color: #451a03;
-        color: #fde047;
-        border: 1px solid #a16207;
-        padding: 8px 12px;
-        border-radius: 6px;
+        color: #b45309;
+        background-color: #fefce8;
+        border: 1px solid #fef08a;
+        padding: 4px 8px;
+        border-radius: 4px;
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
     }
-    .badge-info {
-        background-color: #0c4a6e;
-        color: #7dd3fc;
-        border: 1px solid #0284c7;
-        padding: 8px 12px;
-        border-radius: 6px;
+    .badge-alert {
+        color: #b91c1c;
+        background-color: #fef2f2;
+        border: 1px solid #fecaca;
+        padding: 4px 8px;
+        border-radius: 4px;
         font-weight: 600;
-        font-size: 0.85rem;
-    }
-    .badge-danger {
-        background-color: #450a0a;
-        color: #fca5a5;
-        border: 1px solid #9f1239;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -118,20 +126,20 @@ except Exception as e:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 3. DATA SCHEMAS & MOCK ENGINE (5 Fabricated Vendors with Ugly Edge Cases)
+# 3. MOCK DATASETS & DETERMINISTIC CALCULATIONS ENGINE
 # -----------------------------------------------------------------------------
 @st.cache_data
 def get_rfx_baseline():
-    categories = ["5-Ply Heavy Box", "3-Ply Standard Box", "Custom Printed Mailer", "Partition Tray"]
+    categories = ["5-Ply Heavy Duty Box", "3-Ply Standard Box", "Custom Printed Mailer", "Partition Tray"]
     items = []
     for i in range(1, 31):
         cat = categories[(i - 1) % len(categories)]
         items.append({
-            "Item #": f"ITEM-{i:03d}",
-            "Specification": f"{cat} - Spec Variant {i}",
+            "Line #": f"ITEM-{i:03d}",
+            "Description": f"{cat} - Spec Variant {i}",
             "Target Qty": (i * 500) + 1000,
-            "Target UOM": "pcs",
-            "Target Spec": "180 GSM Kraft" if i % 2 == 0 else "150 GSM Kraft"
+            "UOM": "pcs",
+            "Specification": "180 GSM Kraft Paper" if i % 2 == 0 else "150 GSM Kraft Paper"
         })
     return pd.DataFrame(items)
 
@@ -139,69 +147,95 @@ def get_rfx_baseline():
 def get_vendor_mock_matrix():
     base_df = get_rfx_baseline().copy()
     
-    # Vendor A: Clean Excel (INR)
-    base_df["Vendor A (INR/pc)"] = [round(20 + (i * 0.8), 2) for i in range(30)]
-    
-    # Vendor B: Incomplete PDF (27/30 lines)
-    base_df["Vendor B (INR/pc)"] = [round(18 + (i * 0.75), 2) if i < 27 else None for i in range(30)]
-    
-    # Vendor C: Excel in USD (Converted to INR @ 83.5)
-    base_df["Vendor C (USD->INR)"] = [round((0.23 + (i * 0.01)) * 83.5, 2) for i in range(30)]
-    
-    # Vendor D: Word Doc (Ambiguous units: Quoted per 100 pcs -> Normalized to per pc)
-    base_df["Vendor D (Normalized)"] = [round(19 + (i * 0.85), 2) for i in range(30)]
-    
-    # Vendor E: Scanned Image (OCR low confidence on 3 lines)
-    base_df["Vendor E (Scanned OCR)"] = [round(22 + (i * 0.7), 2) for i in range(30)]
+    # Fabricated vendor pricing demonstrating edge cases
+    base_df["Vendor A (INR)"] = [round(20 + (i * 0.8), 2) for i in range(30)]
+    base_df["Vendor B (INR)"] = [round(18 + (i * 0.75), 2) if i < 27 else None for i in range(30)] # Partial
+    base_df["Vendor C (USD->INR)"] = [round((0.23 + (i * 0.01)) * 83.5, 2) for i in range(30)] # Currency
+    base_df["Vendor D (INR)"] = [round(19 + (i * 0.85), 2) for i in range(30)] # Unit normalized
+    base_df["Vendor E (INR)"] = [round(22 + (i * 0.7), 2) for i in range(30)] # Scanned OCR
     
     return base_df
 
 @st.cache_data
 def get_questionnaire_matrix():
     data = {
-        "Criteria / Question": [
+        "Evaluation Metric": [
             "ISO 9001 Certified?",
             "FSC Certification attached?",
             "3-Year Rejection Rate",
             "Monthly Capacity (Units)",
             "Payment Terms Offered",
-            "Freight Responsibility"
+            "Quality Status"
         ],
-        "Vendor A": ["YES", "YES", "0.8%", "1.2M", "Net 60", "Vendor Prepaid"],
-        "Vendor B": ["YES", "NO", "1.4%", "900K", "Net 30", "Buyer Collect"],
-        "Vendor C": ["YES", "YES", "0.5%", "1.5M", "Net 60", "Vendor Prepaid"],
-        "Vendor D": ["NO", "YES", "2.1%", "1.1M", "Net 45", "Vendor Prepaid"],
-        "Vendor E": ["YES", "YES", "1.2%", "1.3M", "Net 30", "Buyer Collect"]
+        "Vendor A": ["YES", "YES", "0.8%", "1.2M", "Net 60", "PASSED"],
+        "Vendor B": ["YES", "NO", "1.4%", "900K", "Net 30", "PASSED"],
+        "Vendor C": ["YES", "YES", "0.5%", "1.5M", "Net 60", "PASSED"],
+        "Vendor D": ["NO", "YES", "2.1%", "1.1M", "Net 45", "FAILED (Quality)"],
+        "Vendor E": ["YES", "YES", "1.2%", "1.3M", "Net 30", "PASSED"]
     }
     return pd.DataFrame(data)
 
+# Deterministic Mathematical Calculation Function
+def calculate_split_award_metrics(df):
+    vendor_cols = ["Vendor A (INR)", "Vendor B (INR)", "Vendor C (USD->INR)", "Vendor D (INR)", "Vendor E (INR)"]
+    
+    # Exclude Vendor D (Failed Quality) and Vendor B for missing rows if evaluating complete quotes
+    valid_cols = ["Vendor A (INR)", "Vendor C (USD->INR)", "Vendor E (INR)"]
+    
+    # Calculate baseline single vendor total spend
+    single_vendor_totals = {}
+    for col in vendor_cols:
+        sum_val = (df[col] * df["Target Qty"]).sum()
+        single_vendor_totals[col] = round(sum_val, 2)
+        
+    best_single_vendor = min(single_vendor_totals, key=single_vendor_totals.get)
+    best_single_spend = single_vendor_totals[best_single_vendor]
+    
+    # Calculate lowest cost line item split (among quality-qualified vendors)
+    df["Min_Price"] = df[valid_cols].min(axis=1)
+    df["Lowest_Vendor"] = df[valid_cols].idxmin(axis=1)
+    split_award_spend = round((df["Min_Price"] * df["Target Qty"]).sum(), 2)
+    
+    potential_savings = round(best_single_spend - split_award_spend, 2)
+    savings_pct = round((potential_savings / best_single_spend) * 100, 1)
+    
+    return {
+        "best_single_vendor": best_single_vendor.split(" ")[0],
+        "best_single_spend": best_single_spend,
+        "split_award_spend": split_award_spend,
+        "potential_savings": potential_savings,
+        "savings_pct": savings_pct,
+        "split_details": df[["Line #", "Description", "Target Qty", "Lowest_Vendor", "Min_Price"]]
+    }
+
 # -----------------------------------------------------------------------------
-# 4. TOP WORKSPACE HEADER & STAGE NAVIGATION
+# 4. TOP WORKSPACE HEADER & NAVIGATION
 # -----------------------------------------------------------------------------
 st.markdown("""
-<div class="nav-header">
+<div class="top-bar">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
         <div>
-            <span style="color: #38bdf8; font-weight: 700; font-size: 1.2rem;">AERCHAIN</span>
-            <span style="color: #94a3b8; font-size: 0.9rem; margin-left: 12px;">| AI Sourcing Workspace</span>
+            <strong style="font-size: 1.15rem; color: #0f172a;">AERCHAIN</strong>
+            <span style="color: #64748b; font-size: 0.9rem; margin-left: 8px;">| RFx Sourcing Workspace</span>
         </div>
         <div>
-            <span style="color: #f8fafc; font-weight: 600;">Event:</span> 
-            <span style="color: #38bdf8;">Corrugated Packaging Sourcing 2026</span>
-            <span style="color: #64748b; margin: 0 8px;">•</span>
-            <span style="color: #f8fafc; font-weight: 600;">Scope:</span> 30 Items | 5 Vendors
+            <span style="color: #64748b; font-size: 0.85rem;">Project:</span> 
+            <strong style="color: #0f172a;">Corrugated Packaging 2026</strong>
+            <span style="color: #cbd5e1; margin: 0 8px;">•</span>
+            <span style="color: #64748b; font-size: 0.85rem;">Scope:</span> 
+            <strong style="color: #0284c7;">30 Items | 5 Vendors</strong>
         </div>
         <div>
-            <span style="color: #4ade80; font-weight: 600;">● Engine Active</span>
+            <span class="badge-ok">● Pipeline Active</span>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 4 Primary Stage Navigation Tabs
+# Navigation Stage Bar
 nav_stage = st.radio(
-    "Select Stage:",
-    ["① RFx Creation", "② Vendor Responses & Extraction", "③ Comparison Workspace", "④ AI Analyst & Award"],
+    "Navigation:",
+    ["① RFx", "② Responses", "③ Comparison", "④ Analysis"],
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -209,142 +243,155 @@ nav_stage = st.radio(
 st.divider()
 
 # -----------------------------------------------------------------------------
-# STAGE 1: RFX CREATION
+# STAGE 1: RFX
 # -----------------------------------------------------------------------------
-if nav_stage == "① RFx Creation":
-    st.subheader("Stage 1: Generate RFx with AI Co-Pilot")
-    st.caption("Describe your procurement needs in natural language. The system will structure the scope, line items, and terms.")
+if nav_stage == "① RFx":
+    st.subheader("RFx Setup & Scope Ground Truth")
+    st.caption("Tell us what you are sourcing. The AI co-pilot structures the scope, 30 line items, and terms.")
     
     prompt_input = st.text_area(
-        "Describe what you are sourcing:",
-        value="I need to source corrugated packaging boxes for our North India warehouses. Around 30 SKUs across 5-ply and 3-ply boxes. Require ISO 9001 certified vendors with Net 60 payment terms.",
-        height=100
+        "Describe your procurement requirement:",
+        value="I need to source corrugated packaging boxes for North India operations. Around 30 line items across 5-ply and 3-ply boxes. Require ISO 9001 certified suppliers with Net 60 payment terms.",
+        height=90
     )
     
-    if st.button("✨ Structure RFx Scope"):
-        st.success("RFx generated successfully!")
+    if st.button("Generate RFx Structure"):
+        st.success("RFx successfully generated and mapped.")
     
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.markdown("**Structured Line Items Schema (30 Items)**")
-        st.dataframe(get_rfx_baseline(), use_container_width=True, height=350, hide_index=True)
+        st.markdown("**Master Requirement List (30 Line Items)**")
+        st.dataframe(get_rfx_baseline(), use_container_width=True, height=360, hide_index=True)
     with c2:
-        st.markdown("**Commercial Terms & Questionnaire**")
+        st.markdown("**Commercial Terms & Requirements**")
         st.info("""
         * **Category:** Packaging Materials
-        * **Currency Target:** INR
+        * **Target Currency:** INR
         * **Response Deadline:** 15 Oct 2026
         * **Invited Vendors (5):** Vendor A, Vendor B, Vendor C, Vendor D, Vendor E
-        * **Mandatory Questions:** ISO 9001 Certification, Rejection Rate, Payment Terms
+        * **Mandatory Criteria:** ISO 9001 Certification, <0.5% Defect Rate, Net 60 Terms
         """)
 
 # -----------------------------------------------------------------------------
-# STAGE 2: VENDOR RESPONSES & EXTRACTION REVIEW
+# STAGE 2: RESPONSES
 # -----------------------------------------------------------------------------
-elif nav_stage == "② Vendor Responses & Extraction":
-    st.subheader("Stage 2: Vendor Document Extraction & Verification")
-    st.caption("Upload raw vendor quotes. The AI processes heterogeneous formats and highlights extraction anomalies.")
+elif nav_stage == "② Responses":
+    st.subheader("Vendor Document Ingestion & Verification")
+    st.caption("Review extracted vendor files and audit AI normalization across messy submission formats.")
     
-    # Processing Status Cards
-    st.markdown("**Ingested Vendor Documents & Anomaly Tracker:**")
+    st.markdown("**Ingestion Processing Status:**")
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.markdown("<div class='badge-info'><b>Vendor A</b><br>✓ Clean Excel<br>30/30 Extracted</div>", unsafe_allow_html=True)
-    m2.markdown("<div class='badge-warn'><b>Vendor B</b><br>⚠ PDF (Incomplete)<br>27/30 Extracted</div>", unsafe_allow_html=True)
-    m3.markdown("<div class='badge-info'><b>Vendor C</b><br>💱 Excel (USD)<br>30/30 Extracted</div>", unsafe_allow_html=True)
-    m4.markdown("<div class='badge-danger'><b>Vendor D</b><br>📏 Word Doc<br>3 Unit Normalizations</div>", unsafe_allow_html=True)
-    m5.markdown("<div class='badge-warn'><b>Vendor E</b><br>🔍 Scanned Image<br>3 Low-Confidence OCR</div>", unsafe_allow_html=True)
+    m1.markdown("<div class='status-card'><span class='badge-ok'>Vendor A</span><br><br><b>Clean Excel</b><br>30/30 Extracted</div>", unsafe_allow_html=True)
+    m2.markdown("<div class='status-card'><span class='badge-warn'>Vendor B</span><br><br><b>PDF Document</b><br>27/30 Extracted</div>", unsafe_allow_html=True)
+    m3.markdown("<div class='status-card'><span class='badge-ok'>Vendor C</span><br><br><b>Excel (USD)</b><br>30/30 Extracted</div>", unsafe_allow_html=True)
+    m4.markdown("<div class='status-card'><span class='badge-alert'>Vendor D</span><br><br><b>Word Doc</b><br>Unit Normalised</div>", unsafe_allow_html=True)
+    m5.markdown("<div class='status-card'><span class='badge-warn'>Vendor E</span><br><br><b>Scanned OCR</b><br>3 Fields Review</div>", unsafe_allow_html=True)
     
     st.write("")
-    st.markdown("### Verification Drawer: Inspect Extraction Reasoning")
+    st.markdown("### Extraction Audit Trail (Side-by-Side Review)")
     
-    # Split Screen Extraction Verification
-    v_col1, v_col2 = st.columns([1, 1])
-    with v_col1:
-        st.markdown("**Original Vendor Document Snippet (Vendor B Quote.pdf):**")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        st.markdown("**Original Vendor Quote Snippet (Vendor B Quote.pdf):**")
         st.code("""
         =====================================================
         PACKAGING BID RESPONSE - VENDOR B
-        Quote Reference: VB-2026-99
+        Quote Ref: VB-2026-99
         
         Items 1 to 27: Quoted as per specifications attached.
         Items 28, 29, 30: Out of stock. Not quoting.
         =====================================================
         """, language="text")
     
-    with v_col2:
-        st.markdown("**AI Extraction & Confidence Audit:**")
+    with col_b:
+        st.markdown("**AI Extraction & Verification Metadata:**")
         st.json({
             "vendor": "Vendor B",
-            "extracted_fields": "27 / 30",
+            "extracted_lines": "27 / 30",
             "missing_lines": ["ITEM-028", "ITEM-029", "ITEM-030"],
             "unit_of_measure": "pcs",
-            "confidence_score": "94%",
-            "system_flag": "Incomplete Quote - High Risk"
+            "confidence": "94%",
+            "system_flag": "Incomplete Quote - Exception Flagged"
         })
-        st.button("Accept Verification & Proceed")
+        st.button("Confirm Verification & Save")
 
 # -----------------------------------------------------------------------------
-# STAGE 3: COMPARISON WORKSPACE
+# STAGE 3: COMPARISON
 # -----------------------------------------------------------------------------
-elif nav_stage == "③ Comparison Workspace":
-    st.subheader("Stage 3: Side-by-Side Comparison Workspace")
-    st.caption("Hero View: Normalized pricing, commercial terms, and qualitative questionnaire side-by-side.")
+elif nav_stage == "③ Comparison":
+    st.subheader("Side-by-Side Comparison Workspace")
+    st.caption("Normalized pricing, commercial terms, and qualitative evaluations sitting alongside the numbers.")
     
-    comp_mode = st.radio("View Comparison Layer:", ["Commercial Matrix (Pricing)", "Quality & Compliance Questionnaire", "Source Audit Log"], horizontal=True)
+    view_mode = st.radio("Select View:", ["Commercial Pricing Matrix", "Qualitative Questionnaire Matrix"], horizontal=True)
     
-    if comp_mode == "Commercial Matrix (Pricing)":
-        st.markdown("**Side-by-Side Normalized Commercials (Click cell to edit):**")
+    if view_mode == "Commercial Pricing Matrix":
+        st.markdown("**Commercials Comparison Grid (Double-click any cell to override):**")
         matrix_df = get_vendor_mock_matrix()
-        edited_df = st.data_editor(
+        edited_matrix = st.data_editor(
             matrix_df,
             use_container_width=True,
             height=420,
             hide_index=True
         )
-    elif comp_mode == "Quality & Compliance Questionnaire":
-        st.markdown("**Vendor Qualitative Criteria Evaluation:**")
-        q_df = get_questionnaire_matrix()
-        st.dataframe(q_df, use_container_width=True, height=300, hide_index=True)
     else:
-        st.markdown("**Traceability & Lineage Log:**")
-        st.info("Every extracted number is anchored to its source file snippet. Click any row in the comparison grid to trace back to source PDF/Excel cell references.")
+        st.markdown("**Vendor Qualitative Criteria & Compliance:**")
+        q_df = get_questionnaire_matrix()
+        st.dataframe(q_df, use_container_width=True, height=280, hide_index=True)
 
 # -----------------------------------------------------------------------------
-# STAGE 4: AI ANALYST & AWARD
+# STAGE 4: ANALYSIS
 # -----------------------------------------------------------------------------
-elif nav_stage == "④ AI Analyst & Award":
-    st.subheader("Stage 4: Conversational Decision Intelligence")
-    st.caption("Ask complex questions across the normalized dataset to generate split-award scenarios, charts, and recommendations.")
+elif nav_stage == "④ Analysis":
+    st.subheader("Explore Your Bids")
+    st.caption("Ask questions, compare scenarios, and understand the trade-offs before you award.")
     
-    st.markdown("**Suggested CPO Analysis Questions:**")
+    # Calculate deterministic baseline math
+    raw_matrix = get_vendor_mock_matrix()
+    calc = calculate_split_award_metrics(raw_matrix)
+    
+    # Deterministic KPI Summary Bar
+    st.markdown("**Calculated Sourcing Metrics:**")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Lowest Single Vendor", f"₹{calc['best_single_spend']:,.0f}", f"Vendor {calc['best_single_vendor']}")
+    k2.metric("Split-Award Total", f"₹{calc['split_award_spend']:,.0f}", f"-₹{calc['potential_savings']:,.0f}")
+    k3.metric("Potential Savings", f"{calc['savings_pct']}%", "vs Single Vendor")
+    k4.metric("Qualified Vendors", "3 / 5", "Vendor D Failed Quality")
+    
+    st.divider()
+    
+    # Quick Prompt Buttons
+    st.markdown("**Suggested Queries:**")
     q1, q2, q3 = st.columns(3)
     
     prompt_choice = None
-    if q1.button("💡 Split-Award: Lowest price per item"):
-        prompt_choice = "What if I split the order by line item among vendors who passed quality? Show total cost and savings."
-    if q2.button("⚠️ Audit Partial Quote Risks"):
-        prompt_choice = "Which vendors have missing quotes or currency mismatches, and what is the spend risk?"
-    if q3.button("📊 Recommended Single Vendor"):
-        prompt_choice = "Which single vendor offers the best overall value considering quality and price?"
+    if q1.button("💡 Analyze lowest-cost split award"):
+        prompt_choice = f"Explain the split-award scenario where total spend is ₹{calc['split_award_spend']:,.0f} compared to single vendor spend of ₹{calc['best_single_spend']:,.0f}. Which vendors get which line items?"
+    if q2.button("⚠️ Evaluate vendor risk & missing quotes"):
+        prompt_choice = "Which vendors pose operational risks due to incomplete quotes or failed quality certifications?"
+    if q3.button("📊 Single vendor award recommendation"):
+        prompt_choice = "Which single vendor offers the best overall proposal if we cannot split the award across multiple suppliers?"
 
-    user_query = st.text_input("Ask a question about the bids:", value=prompt_choice if prompt_choice else "", placeholder="e.g., Show me items where Vendor C is >10% cheaper than Vendor A.")
+    user_query = st.text_input("Type your question:", value=prompt_choice if prompt_choice else "", placeholder="e.g., Show line items where Vendor C is >10% cheaper than Vendor A.")
     
     if user_query:
-        with st.spinner("Calculating scenarios with Gemini 2.5 Flash..."):
-            matrix_json = get_vendor_mock_matrix().to_json(orient="records")
+        with st.spinner("Analyzing dataset with Gemini 2.5 Flash..."):
+            matrix_json = raw_matrix.to_json(orient="records")
             q_json = get_questionnaire_matrix().to_json(orient="records")
             
-            system_instruction = """
-            You are a Chief Procurement Officer AI assistant.
-            Analyze the normalized matrix and questionnaire.
-            When asked scenario questions (e.g. split-award), provide structured output:
-            1. Executive Savings Summary
-            2. Split-Award Allocation Table (Vendor, Items Awarded, Value)
-            3. Explicit Assumptions (e.g. Quality filtering, Unit conversions)
-            Use clear markdown tables, bold metrics, and concise bullet points.
+            system_instruction = f"""
+            You are an expert Chief Procurement Officer (CPO) assistant.
+            You are analyzing an RFx dataset of 30 line items across 5 vendors.
+            
+            Deterministic Pre-Calculated Baseline:
+            - Best Single-Vendor Award: Vendor {calc['best_single_vendor']} at ₹{calc['best_single_spend']:,.0f}
+            - Lowest Line-Item Split Award: ₹{calc['split_award_spend']:,.0f}
+            - Calculated Savings: ₹{calc['potential_savings']:,.0f} ({calc['savings_pct']}%)
+            - Vendor D failed quality standards. Vendor B missed 3 line items.
+            
+            Provide a clear executive response in plain English using markdown headers, bullet points, and explicit trade-off explanations.
             """
             
-            prompt = f"Commercial Matrix:\n{matrix_json}\n\nQuality Questionnaire:\n{q_json}\n\nQuestion: {user_query}"
+            prompt = f"Data Matrix:\n{matrix_json}\n\nQuality Matrix:\n{q_json}\n\nUser Question: {user_query}"
             
             try:
                 response = client.models.generate_content(
@@ -356,30 +403,33 @@ elif nav_stage == "④ AI Analyst & Award":
                     )
                 )
                 
-                st.markdown("### AI Analyst Decision Intelligence")
+                st.markdown("### Executive Advisory Summary")
                 st.write(response.text)
                 
                 st.divider()
-                st.markdown("### Commercial Spend Distribution (INR)")
+                st.markdown("### Spend Comparison Visualizer")
                 
                 summary_data = pd.DataFrame({
-                    "Vendor": ["Vendor A", "Vendor B (Partial)", "Vendor C (USD->INR)", "Vendor D", "Vendor E"],
-                    "Total Spend (INR)": [1050000, 890000, 1020000, 1120000, 980000]
+                    "Vendor": ["Vendor A", "Vendor B (Partial)", "Vendor C (USD->INR)", "Vendor D (Failed Quality)", "Vendor E"],
+                    "Total Quoted Spend (INR)": [1050000, 890000, 1020000, 1120000, 980000]
                 })
                 fig = px.bar(
                     summary_data, 
                     x="Vendor", 
-                    y="Total Spend (INR)", 
+                    y="Total Quoted Spend (INR)", 
                     color="Vendor",
-                    template="plotly_dark"
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    template="plotly_white",
+                    title="Total Quoted Spend Comparison Across All 5 Suppliers"
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 
-                csv = get_vendor_mock_matrix().to_csv(index=False).encode('utf-8')
+                # CSV Export
+                csv = raw_matrix.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Export Decision Note & Extraction Matrix (CSV)",
+                    label="📥 Export Decision Summary & Comparison Grid (CSV)",
                     data=csv,
-                    file_name="RFx_Decision_Summary.csv",
+                    file_name="RFx_Award_Decision_Summary.csv",
                     mime="text/csv"
                 )
                 
