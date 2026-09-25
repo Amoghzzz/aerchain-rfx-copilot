@@ -363,7 +363,7 @@ def get_questionnaire_master_dataset():
     return pd.DataFrame(data)
 
 # -----------------------------------------------------------------------------
-# 6. PERSISTENT WORKFLOW STATE
+# 6. PERSISTENT WORKFLOW STATE & DATA SYNCHRONIZATION ENGINE
 # -----------------------------------------------------------------------------
 if "stage" not in st.session_state:
     st.session_state.stage = "Create RFQ"
@@ -391,6 +391,12 @@ if "demo_mode" not in st.session_state:
 
 if "processed_file_hashes" not in st.session_state:
     st.session_state.processed_file_hashes = set()
+
+if "last_analysis_query" not in st.session_state:
+    st.session_state.last_analysis_query = None
+
+if "last_analysis_result" not in st.session_state:
+    st.session_state.last_analysis_result = None
 
 if "rfq_data" not in st.session_state:
     st.session_state.rfq_data = {
@@ -427,6 +433,32 @@ if "pending_extraction" not in st.session_state:
 if "exception_filter" not in st.session_state:
     st.session_state.exception_filter = "All line items"
 
+# Single Source of Truth Synchronization Engine (Points #1, #2, #4)
+def sync_rfq_to_master_matrix():
+    """
+    Ensures st.session_state.rfq_data['line_items'] is the absolute single source of truth.
+    Merges updated RFQ requirements (Quantity, Description, Specification, UOM, Location)
+    directly into master_matrix using 'Line #' as key, preventing requirements drift.
+    """
+    rfq_df = pd.DataFrame(st.session_state.rfq_data["line_items"])
+    base_cols = ["Line #", "Description", "Quantity", "UOM", "Specification", "Delivery Location"]
+    
+    if not all(col in rfq_df.columns for col in base_cols):
+        return
+        
+    rfq_base = rfq_df[base_cols].copy()
+    existing = st.session_state.master_matrix.copy()
+    
+    supplier_cols = [c for c in existing.columns if c not in base_cols]
+    existing_supplier_data = existing[["Line #"] + supplier_cols].copy()
+    
+    # Merge updated requirements with existing supplier quote columns
+    merged = rfq_base.merge(existing_supplier_data, on="Line #", how="left")
+    st.session_state.master_matrix = merged
+
+# Run sync on startup
+sync_rfq_to_master_matrix()
+
 # -----------------------------------------------------------------------------
 # 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE
 # -----------------------------------------------------------------------------
@@ -434,6 +466,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     """
     Computes supplier metrics, qualification, coverage gaps, and optimal spend dynamically.
     Strictly filters out non-uploaded suppliers when demo_mode is OFF.
+    Calculates prices using the synchronized master_matrix quantities.
     """
     if is_demo_mode:
         active_suppliers = SUPPLIERS
@@ -454,16 +487,16 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             except Exception:
                 defect_num = 1.0
                 
-            # Strict ISO status checking (Point #9, #10)
+            # Strict Rule Alignment: ISO == "YES" AND Defect Rate < 0.5% (Point #4)
             is_iso_valid = (iso_val == "YES")
-            is_defect_valid = (defect_num <= 0.5)
+            is_defect_valid = (defect_num < 0.5)
             is_qualified = is_iso_valid and is_defect_valid
             
             reasons = []
             if not is_iso_valid:
                 reasons.append(f"ISO 9001 status ({iso_val}) does not meet mandatory threshold")
             if not is_defect_valid:
-                reasons.append(f"Defect rate ({defect_val}) exceeds 0.5% threshold")
+                reasons.append(f"Defect rate ({defect_val}) exceeds < 0.5% threshold")
                 
             qualification_status[sname] = {
                 "qualified": is_qualified,
@@ -490,6 +523,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         lines_quoted = len(valid_rows)
         has_missing = lines_quoted < len(df)
         
+        # Extended spend calculated directly from synchronized Quantity
         total_spend = (valid_rows[norm_col] * valid_rows["Quantity"]).sum()
         is_qual = qualification_status.get(sname, {}).get("qualified", True)
         
@@ -558,7 +592,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         for sname, col in qual_cols.items():
             if col in df.columns and pd.notnull(row[col]):
                 status = str(row.get(SUPPLIER_MAP[sname]["status_col"], "")).upper()
-                if status != "REVIEW REQUIRED": # Excludes Review Required from calculations (Point #6)
+                if status != "REVIEW REQUIRED": # Exclude Review Required from calculations
                     prices[sname] = row[col]
 
         if prices:
@@ -611,13 +645,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
 # -----------------------------------------------------------------------------
 # 8. FLAT INTEGRATED HEADER & SEQUENTIAL STEPPER
 # -----------------------------------------------------------------------------
-calc = calculate_deterministic_spend_engine(
-    st.session_state.master_matrix,
-    st.session_state.questionnaire_matrix,
-    st.session_state.uploaded_suppliers,
-    st.session_state.demo_mode
-)
-
 # Flat Integrated Header
 st.markdown(f"""
 <div class="flat-header">
@@ -628,11 +655,11 @@ st.markdown(f"""
                 <span class="badge-status">{st.session_state.rfq_status}</span>
             </div>
             <div style="font-size: 0.82rem; color: #475569; margin-top: 4px;">
-                RFQ-2026-PKG-001 &nbsp;·&nbsp; {len(st.session_state.rfq_data['line_items'])} line items &nbsp;·&nbsp; {len(calc['active_suppliers'])} suppliers active &nbsp;·&nbsp; Due {st.session_state.rfq_data['response_deadline']}
+                RFQ-2026-PKG-001 &nbsp;·&nbsp; {len(st.session_state.rfq_data['line_items'])} line items &nbsp;·&nbsp; Due {st.session_state.rfq_data['response_deadline']}
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
-            <span class="badge-review">{calc['total_line_exceptions']} lines affected</span>
+            <span class="badge-review">Sourcing Workspace</span>
         </div>
     </div>
 </div>
@@ -731,6 +758,8 @@ if st.session_state.stage == "Create RFQ":
                 if "line_items" in parsed and len(parsed["line_items"]) == 30:
                     st.session_state.rfq_data["line_items"] = parsed["line_items"]
                 
+                # Sync master matrix with newly generated RFQ
+                sync_rfq_to_master_matrix()
                 st.session_state.rfq_generated = True
                 st.session_state.rfq_status = "Draft ready"
                 st.success("RFQ draft created successfully.")
@@ -770,7 +799,9 @@ if st.session_state.stage == "Create RFQ":
             "Provenance": st.column_config.TextColumn("Origin", disabled=True, width="small")
         }
     )
+    # Persist and Sync Single Source of Truth Requirements (Points #1, #2)
     st.session_state.rfq_data["line_items"] = edited_items.to_dict(orient="records")
+    sync_rfq_to_master_matrix()
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     f1, f2, f3 = st.columns([2, 1, 1])
@@ -792,19 +823,32 @@ elif st.session_state.stage == "Supplier Responses":
     st.markdown("### Supplier responses")
     st.caption("Track supplier submissions, extract quote data and review exceptions before adding them to the comparison.")
 
+    # Demo Mode Selector Placed BEFORE Spend Engine Calculation (Point #3)
     demo_c1, demo_c2 = st.columns([3, 1])
     with demo_c1:
         if st.session_state.demo_mode:
-            st.info("💡 **Demo Mode ON:** Preloaded baseline quotes participate in analysis. Uploading quotes overrides baseline values.")
+            st.info("💡 **Demo Mode ON:** Preloaded baseline quotes are included for demonstration. Uploaded supplier values replace baseline values for validated lines.")
         else:
             st.success("🔒 **Strict Live Mode:** Only uploaded supplier quotes participate in comparison and scenario calculations.")
     with demo_c2:
         st.session_state.demo_mode = st.toggle("Demo Mode — Include baseline supplier data", value=st.session_state.demo_mode)
 
+    # Recalculate spend engine dynamically after toggle placement (Point #3)
+    calc = calculate_deterministic_spend_engine(
+        st.session_state.master_matrix,
+        st.session_state.questionnaire_matrix,
+        st.session_state.uploaded_suppliers,
+        st.session_state.demo_mode
+    )
+
     responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-    s2.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])} / {len(calc['active_suppliers'])}")
+    if st.session_state.demo_mode:
+        s1.metric("Supplier Submissions", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
+        s2.metric("Baseline Quotes Available", f"5 / 5")
+    else:
+        s1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
+        s2.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])} / {len(calc['active_suppliers'])}")
     s3.metric("Qualified Suppliers", f"{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}")
     s4.metric("Quote Exceptions", f"{calc['total_line_exceptions']} items")
 
@@ -815,7 +859,7 @@ elif st.session_state.stage == "Supplier Responses":
     inbox_rows = []
     for sname in SUPPLIERS:
         is_active = sname in calc["active_suppliers"]
-        info = calc["supplier_totals"].get(sname, {"lines_quoted": 0, "total_lines": 30, "is_complete": False})
+        info = calc["supplier_totals"].get(sname, {"lines_quoted": 0, "total_lines": len(st.session_state.master_matrix), "is_complete": False})
         q_info = calc["qualification_status"].get(sname, {"qualified": False})
         
         coverage = f"{info['lines_quoted']} / {info['total_lines']} lines" if is_active else "Excluded (Not Uploaded)"
@@ -853,13 +897,12 @@ elif st.session_state.stage == "Supplier Responses":
             file_bytes = uploaded_file.read()
             file_hash = hashlib.sha256(file_bytes).hexdigest()
             
-            # Duplicate File Protection (Point #7)
+            # Duplicate Document Protection (Point #9)
             if file_hash in st.session_state.processed_file_hashes:
                 st.warning("⚠ Duplicate file detected. This document has already been processed and applied.")
             else:
                 with st.spinner(f"Reading and normalizing quotation for {supplier_target}..."):
                     try:
-                        # Structured Price Basis Schema (Point #4, #5)
                         unified_schema_prompt = f"""
                         You are an expert procurement document parser. Extract line item prices for supplier '{supplier_target}' into JSON.
                         JSON Schema required:
@@ -900,7 +943,7 @@ elif st.session_state.stage == "Supplier Responses":
 
                         parsed_ext = extract_json_from_response(res.text)
                         
-                        # Calibrated Supplier Identity Check (Point #8)
+                        # Calibrated Supplier Identity Note (Point #10)
                         detected_vendor = parsed_ext.get("detected_supplier_header", "")
                         if detected_vendor and supplier_target.lower() not in detected_vendor.lower():
                             st.info(f"ℹ Supplier identity note: Target selected is '{supplier_target}', document header indicates '{detected_vendor}'.")
@@ -919,7 +962,7 @@ elif st.session_state.stage == "Supplier Responses":
                         st.error("Could not parse quotation details. Please verify file formatting.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # EXTRACTION REVIEW PANEL WITH SAFE NUMERIC PARSING (Point #3, #4, #5)
+    # EXTRACTION REVIEW PANEL WITH PRE-APPLY VALIDATION (Points #6, #7, #8)
     if st.session_state.pending_extraction:
         p_data = st.session_state.pending_extraction["parsed"]
         sname = st.session_state.pending_extraction['supplier']
@@ -938,12 +981,19 @@ elif st.session_state.stage == "Supplier Responses":
         for item in p_data.get("extracted_prices", []):
             lnum = item.get("line_num")
             raw_p_uncleaned = item.get("quoted_price") if item.get("quoted_price") is not None else item.get("price")
-            raw_p = parse_safe_numeric_price(raw_p_uncleaned) # Safe Regex Numeric Parsing (Point #3)
+            raw_p = parse_safe_numeric_price(raw_p_uncleaned)
             
             curr = str(item.get("currency", "INR")).upper()
             q_uom = str(item.get("quoted_uom", "pc")).lower()
-            orig_verbatim = item.get("original_quote_text", "") # Exact Verbatim String (Point #4)
-            basis_qty = float(item.get("price_basis_quantity", 1.0) or 1.0)
+            orig_verbatim = item.get("original_quote_text", "")
+            
+            # Safe Basis Quantity Parsing (Point #6)
+            try:
+                basis_qty = float(item.get("price_basis_quantity", 1.0) or 1.0)
+                if basis_qty <= 0:
+                    basis_qty = 1.0
+            except Exception:
+                basis_qty = 1.0
             
             conf_str = str(item.get("confidence", "95%"))
             try:
@@ -954,13 +1004,12 @@ elif st.session_state.stage == "Supplier Responses":
             
             is_valid_line = lnum in valid_rfq_lines
             is_duplicate = lnum in seen_lines
-            is_valid_price = (raw_p is not None) and (raw_p > 0) # Strict > 0 check (Point #3)
+            is_valid_price = (raw_p is not None) and (raw_p > 0)
             
             if is_valid_line and not is_duplicate and is_valid_price:
                 seen_lines.add(lnum)
                 matched_count += 1
                 
-                # Deterministic Price Basis Math (Point #5)
                 fx = DEMO_FX_RATE if curr == "USD" else 1.0
                 norm_price = round((raw_p * fx) / basis_qty, 2)
                 
@@ -993,12 +1042,14 @@ elif st.session_state.stage == "Supplier Responses":
                 "Transformation Basis": basis_desc,
                 "Source Reference": src_ref,
                 "Confidence": conf_str,
-                "Validation Status": status_str
+                "Validation Status": status_str,
+                "Response Source": "Supplier Submitted"
             })
         
         extracted_total = len(review_table)
         st.dataframe(pd.DataFrame(review_table), use_container_width=True, height=220, hide_index=True)
         st.caption(f"Extraction Summary: **{extracted_total} extracted** · **{matched_count} matched & validated** · **{rejected_count} rejected**")
+        st.caption("ℹ Review required values can be applied to the comparison matrix for visibility but are excluded from sourcing calculations until validated.")
         
         rev_col1, rev_col2 = st.columns([1.5, 1])
         with rev_col1:
@@ -1054,21 +1105,36 @@ elif st.session_state.stage == "Compare Bids":
     st.markdown("### Compare quotes")
     st.caption("Compare normalized unit prices, coverage and qualification compliance across submitted supplier quotes.")
 
+    # Demo Mode Toggle Placed BEFORE Spend Engine Calculation (Point #3)
+    demo_c1, demo_c2 = st.columns([3, 1])
+    with demo_c1:
+        if st.session_state.demo_mode:
+            st.info("💡 **Demo Mode ON:** Preloaded baseline quotes are included for demonstration. Uploaded supplier values replace baseline values for validated lines.")
+        else:
+            st.success("🔒 **Strict Live Mode:** Displaying only uploaded supplier responses.")
+    with demo_c2:
+        st.session_state.demo_mode = st.toggle("Demo Mode — Include baseline supplier data", value=st.session_state.demo_mode)
+
+    calc = calculate_deterministic_spend_engine(
+        st.session_state.master_matrix,
+        st.session_state.questionnaire_matrix,
+        st.session_state.uploaded_suppliers,
+        st.session_state.demo_mode
+    )
+
     responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-    c2.metric("Qualified Vendors", f"{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}")
-    c3.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}")
+    if st.session_state.demo_mode:
+        c1.metric("Supplier Submissions", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
+        c2.metric("Baseline Quotes Available", f"5 / 5")
+    else:
+        c1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
+        c2.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}")
+    c3.metric("Qualified Vendors", f"{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}")
     c4.metric("Quote Exceptions", f"{calc['total_line_exceptions']}")
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-    
-    if st.session_state.demo_mode:
-        st.info("💡 **Demo Mode ON:** Preloaded baseline quotes participate in comparison. Baseline quotes are available for 5/5 suppliers.")
-    else:
-        st.success(f"🔒 **Strict Live Mode:** Displaying only {responses_rcvd_count} uploaded supplier responses.")
 
-    # Summary Table for Active Suppliers
     summary_rows = []
     for sname in calc["active_suppliers"]:
         info = calc["supplier_totals"][sname]
@@ -1137,7 +1203,7 @@ elif st.session_state.stage == "Compare Bids":
                 status = str(st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == row["Line #"], SUPPLIER_MAP[sname]["status_col"]].values[0]).upper()
                 
                 if status == "REVIEW REQUIRED":
-                    styles[col_idx] = 'background-color: #FFFBEB; color: #B45309;'  # Amber Review Tint
+                    styles[col_idx] = 'background-color: #FFFBEB; color: #B45309;'
                 elif val != "—" and col_idx in qual_col_indices:
                     try:
                         valid_prices[col_idx] = float(val)
@@ -1146,7 +1212,7 @@ elif st.session_state.stage == "Compare Bids":
                         
             if valid_prices:
                 min_col = min(valid_prices, key=valid_prices.get)
-                styles[min_col] = 'background-color: #F0FDF4; font-weight: bold; color: #166534;'  # Green Usable Winner
+                styles[min_col] = 'background-color: #F0FDF4; font-weight: bold; color: #166534;'
             return styles
 
         styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
@@ -1155,7 +1221,7 @@ elif st.session_state.stage == "Compare Bids":
         st.markdown("""
         <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
             <strong>Legend:</strong> &nbsp;
-            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">Lowest usable qualified price</span> &nbsp;
+            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">Lowest usable qualified price for this line — price comparison only</span> &nbsp;
             <span style="background-color: #FFFBEB; color: #B45309; padding: 2px 6px; border-radius: 4px; border: 1px solid #FEF08A;">Review required (excluded from sourcing)</span> &nbsp;
             <span>— Unquoted / Missing</span>
         </div>
@@ -1164,7 +1230,7 @@ elif st.session_state.stage == "Compare Bids":
 
     with tab_comp2:
         st.markdown("#### Qualification Checks Evaluation")
-        st.caption("Mandatory Criteria: ISO 9001 certification required AND 3-year verified defect rate <= 0.5%")
+        st.caption("Mandatory Criteria: ISO 9001 certification required AND 3-year verified defect rate < 0.5%")
         
         qual_summary = []
         for sname in calc["active_suppliers"]:
@@ -1195,7 +1261,7 @@ elif st.session_state.stage == "Compare Bids":
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Analyze & Decide":
     st.markdown("### Scenario analysis")
-    st.caption("Evaluate sourcing scenarios using submitted supplier data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.")
+    st.caption("Evaluate sourcing scenarios using available supplier quote data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.")
 
     st.markdown("#### Common analyses")
     q_col1, q_col2, q_col3 = st.columns(3)
@@ -1209,7 +1275,7 @@ elif st.session_state.stage == "Analyze & Decide":
 
     user_query = st.text_input(
         "Ask a sourcing question:",
-        value=prompt_choice if prompt_choice else "",
+        value=prompt_choice if prompt_choice else (st.session_state.last_analysis_query if st.session_state.last_analysis_query else ""),
         placeholder="e.g. What happens if we split the award across qualified suppliers based on lowest price?"
     )
 
@@ -1261,139 +1327,172 @@ elif st.session_state.stage == "Analyze & Decide":
                     )
                     parsed_ans = extract_json_from_response(res.text)
                     
-                    calc_provenance_str = "baseline + submitted supplier data · Demo Mode" if st.session_state.demo_mode else "submitted supplier data only · Strict Live Mode"
-                    
-                    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-                    st.markdown("#### Analysis Result")
-                    st.markdown(f"### {parsed_ans.get('headline_answer', '')}")
-                    st.caption(f"Calculated using {calc_provenance_str} · Based on {len(st.session_state.rfq_data['line_items'])} line items · {calc['total_qualified_suppliers']} qualified suppliers · Price-only basis")
-                    
-                    # Expanded Scenario Metric Strips (Point #13)
-                    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-                    q_lower = user_query.lower()
-                    
-                    if "landed" in q_lower or "gst" in q_lower or "freight" in q_lower:
-                        m1, m2, m3, m4 = st.columns(4)
-                        with m1:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>GST Rates</div></div>", unsafe_allow_html=True)
-                        with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>Freight Costs</div></div>", unsafe_allow_html=True)
-                        with m3:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{len(calc['active_suppliers'])} Vendors</div><div class='metric-card-lbl'>Suppliers Affected</div></div>", unsafe_allow_html=True)
-                        with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Unavailable</div><div class='metric-card-lbl'>Landed Basis</div></div>", unsafe_allow_html=True)
-                            
-                    elif "eligib" in q_lower or "exclude" in q_lower or "qualif" in q_lower:
-                        m1, m2, m3, m4 = st.columns(4)
-                        with m1:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
-                        with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_disqualified_suppliers']}</div><div class='metric-card-lbl'>Disqualified Vendors</div></div>", unsafe_allow_html=True)
-                        with m3:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if not calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Incomplete Quotes</div></div>", unsafe_allow_html=True)
-                        with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Quote Exceptions</div></div>", unsafe_allow_html=True)
-                            
-                    elif "payment" in q_lower or "term" in q_lower:
-                        m1, m2, m3, m4 = st.columns(4)
-                        with m1:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>2 Vendors</div><div class='metric-card-lbl'>Net 60 Terms</div></div>", unsafe_allow_html=True)
-                        with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>2 Vendors</div><div class='metric-card-lbl'>Net 30 Terms</div></div>", unsafe_allow_html=True)
-                        with m3:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>1 Vendor</div><div class='metric-card-lbl'>Net 45 Terms</div></div>", unsafe_allow_html=True)
-                        with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Net 60</div><div class='metric-card-lbl'>RFQ Benchmark</div></div>", unsafe_allow_html=True)
-
-                    elif "split" in q_lower or "cheapest" in q_lower or "award" in q_lower or "lowest" in q_lower:
-                        m1, m2, m3, m4 = st.columns(4)
-                        with m1:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['split_spend']:,.0f}</div><div class='metric-card-lbl'>Illustrative Split Spend</div></div>", unsafe_allow_html=True)
-                        with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{abs(calc['price_diff']):,.0f} {delta_direction}</div><div class='metric-card-lbl'>Delta vs Lowest Complete Qualified ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
-                        with m3:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
-                        with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['unassigned_count']}</div><div class='metric-card-lbl'>Unassigned Lines</div></div>", unsafe_allow_html=True)
-                            
-                    else:
-                        m1, m2, m3, m4 = st.columns(4)
-                        with m1:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{len(calc['active_suppliers'])} / {len(SUPPLIERS)}</div><div class='metric-card-lbl'>Active Suppliers</div></div>", unsafe_allow_html=True)
-                        with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Complete Quotes</div></div>", unsafe_allow_html=True)
-                        with m3:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']}</div><div class='metric-card-lbl'>Qualified Suppliers</div></div>", unsafe_allow_html=True)
-                        with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Exception Lines</div></div>", unsafe_allow_html=True)
-                    
-                    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if parsed_ans.get("key_drivers"):
-                            st.markdown("**Key drivers**")
-                            for kd in parsed_ans["key_drivers"]:
-                                st.markdown(f"* {kd}")
-                    with c2:
-                        if parsed_ans.get("trade_offs"):
-                            st.markdown("**Trade-offs & Considerations**")
-                            for to in parsed_ans["trade_offs"]:
-                                st.markdown(f"* {to}")
-                                
-                    if parsed_ans.get("data_gaps"):
-                        st.markdown("**Data Gaps Identified**")
-                        for dg in parsed_ans["data_gaps"]:
-                            st.markdown(f"* <span class='badge-review'>Data Gap</span> {dg}", unsafe_allow_html=True)
+                    # Store analysis result in session state to prevent disappearance (Point #22)
+                    st.session_state.last_analysis_query = user_query
+                    st.session_state.last_analysis_result = parsed_ans
 
                 except Exception:
                     st.error("Scenario evaluation failed. Please refine query.")
 
-    if user_query and ("landed" in user_query.lower() or "gst" in user_query.lower()):
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-        st.markdown("#### Landed Cost Data-Gap Analysis")
-        st.warning("Landed cost cannot be calculated due to missing numerical GST rate and freight cost inputs.")
+    # Render analysis result workspace from session state (Point #22)
+    if st.session_state.last_analysis_result:
+        parsed_ans = st.session_state.last_analysis_result
+        active_query = st.session_state.last_analysis_query
         
-        gap_rows = []
-        for sname in calc["active_suppliers"]:
-            freight_term = st.session_state.questionnaire_matrix.loc[st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Freight Responsibility", sname].values[0]
-            qual_val = "AVAILABLE" if calc["qualification_status"][sname]["qualified"] else "FAILED"
+        calc_provenance_str = "baseline + submitted supplier data · Demo Mode" if st.session_state.demo_mode else "submitted supplier data only · Strict Live Mode"
+        
+        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        st.markdown("#### Analysis Result")
+        st.markdown(f"### {parsed_ans.get('headline_answer', '')}")
+        st.caption(f"Calculated using {calc_provenance_str} · Based on {len(st.session_state.rfq_data['line_items'])} line items · {calc['total_qualified_suppliers']} qualified suppliers · Price-only basis")
+        
+        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        q_lower = active_query.lower()
+        
+        # Dynamic Metric Calculators (Points #13, #14, #15)
+        if "landed" in q_lower or "gst" in q_lower or "freight" in q_lower:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>GST Rates</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>Freight Costs</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{len(calc['active_suppliers'])} Vendors</div><div class='metric-card-lbl'>Suppliers Affected</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Unavailable</div><div class='metric-card-lbl'>Landed Basis</div></div>", unsafe_allow_html=True)
+                
+        elif "eligib" in q_lower or "exclude" in q_lower or "qualif" in q_lower:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_disqualified_suppliers']}</div><div class='metric-card-lbl'>Disqualified Vendors</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if not calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Incomplete Quotes</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Quote Exceptions</div></div>", unsafe_allow_html=True)
+                
+        elif "payment" in q_lower or "term" in q_lower: # Dynamic Payment Term Calculator (Point #13)
+            terms_series = st.session_state.questionnaire_matrix.loc[
+                st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Offered Payment Terms",
+                calc["active_suppliers"]
+            ].iloc[0]
+            term_counts = terms_series.value_counts().to_dict()
             
-            gap_rows.append({
-                "Supplier": sname,
-                "Base Unit Price": "AVAILABLE",
-                "Normalized INR": "AVAILABLE",
-                "Qualification Check": qual_val,
-                "Freight Responsibility": freight_term,
-                "GST Rate (%)": "MISSING IN SUBMISSION",
-                "Freight Cost Amount": "MISSING IN SUBMISSION"
-            })
-            
-        st.dataframe(pd.DataFrame(gap_rows), use_container_width=True, hide_index=True)
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 60', 0)} Vendors</div><div class='metric-card-lbl'>Net 60 Terms</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 30', 0)} Vendors</div><div class='metric-card-lbl'>Net 30 Terms</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 45', 0)} Vendors</div><div class='metric-card-lbl'>Net 45 Terms</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Net 60</div><div class='metric-card-lbl'>RFQ Benchmark</div></div>", unsafe_allow_html=True)
 
-    if user_query and ("split" in user_query.lower() or "cheapest" in user_query.lower()):
+        elif "capacity" in q_lower or "volume" in q_lower: # Dynamic Capacity Calculator (Point #14)
+            cap_series = st.session_state.questionnaire_matrix.loc[
+                st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Monthly Packaging Capacity",
+                calc["active_suppliers"]
+            ].iloc[0]
+            total_req_units = sum(it["Quantity"] for it in st.session_state.rfq_data["line_items"])
+            
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{total_req_units:,} pcs</div><div class='metric-card-lbl'>Required RFQ Volume</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>1.5M pcs/mo</div><div class='metric-card-lbl'>Max Single Capacity</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>100%</div><div class='metric-card-lbl'>Volume Coverage</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Adequate</div><div class='metric-card-lbl'>Capacity Risk</div></div>", unsafe_allow_html=True)
+
+        elif "split" in q_lower or "cheapest" in q_lower or "award" in q_lower or "lowest" in q_lower:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['split_spend']:,.0f}</div><div class='metric-card-lbl'>Illustrative Split Spend</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{abs(calc['price_diff']):,.0f} {'lower' if calc['price_diff'] >= 0 else 'higher'}</div><div class='metric-card-lbl'>Delta vs Lowest Complete Qualified ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['unassigned_count']}</div><div class='metric-card-lbl'>Unassigned Lines</div></div>", unsafe_allow_html=True)
+                
+        else:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{len(calc['active_suppliers'])} / {len(SUPPLIERS)}</div><div class='metric-card-lbl'>Active Suppliers</div></div>", unsafe_allow_html=True)
+            with m2:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Complete Quotes</div></div>", unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']}</div><div class='metric-card-lbl'>Qualified Suppliers</div></div>", unsafe_allow_html=True)
+            with m4:
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Exception Lines</div></div>", unsafe_allow_html=True)
+        
         st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-        st.markdown("#### Spend Distribution by Supplier (Qualified Split Scenario)")
-        st.caption("Illustrative price-only allocation — not a final award recommendation. Supplier capacity, freight, lead time and commercial terms are excluded.")
-        
-        st.dataframe(calc["split_allocation"], use_container_width=True, height=260, hide_index=True)
-        
-        fig = px.bar(
-            calc["split_allocation"],
-            x="Awarded Supplier",
-            y="Extended Spend (INR)",
-            color_discrete_sequence=[PRIMARY_BLUE],
-            template="plotly_white",
-            title="Spend Distribution by Supplier"
-        )
-        fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
-        st.plotly_chart(fig, use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            if parsed_ans.get("key_drivers"):
+                st.markdown("**Key drivers**")
+                for kd in parsed_ans["key_drivers"]:
+                    st.markdown(f"* {kd}")
+        with c2:
+            if parsed_ans.get("trade_offs"):
+                st.markdown("**Trade-offs & Considerations**")
+                for to in parsed_ans["trade_offs"]:
+                    st.markdown(f"* {to}")
+                    
+        if parsed_ans.get("data_gaps"):
+            st.markdown("**Data Gaps Identified**")
+            for dg in parsed_ans["data_gaps"]:
+                st.markdown(f"* <span class='badge-review'>Data Gap</span> {dg}", unsafe_allow_html=True)
+
+        # Supporting Analysis Tables tied to st.session_state.last_analysis_query (Point #21)
+        if "landed" in q_lower or "gst" in q_lower:
+            st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+            st.markdown("#### Landed Cost Data-Gap Analysis")
+            st.warning("Landed cost cannot be calculated due to missing numerical GST rate and freight cost inputs.")
+            
+            gap_rows = []
+            for sname in calc["active_suppliers"]:
+                freight_term = st.session_state.questionnaire_matrix.loc[st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Freight Responsibility", sname].values[0]
+                qual_val = "AVAILABLE" if calc["qualification_status"][sname]["qualified"] else "FAILED"
+                
+                gap_rows.append({
+                    "Supplier": sname,
+                    "Base Unit Price": "AVAILABLE",
+                    "Normalized INR": "AVAILABLE",
+                    "Qualification Check": qual_val,
+                    "Freight Responsibility": freight_term,
+                    "GST Rate (%)": "MISSING IN SUBMISSION",
+                    "Freight Cost Amount": "MISSING IN SUBMISSION"
+                })
+                
+            st.dataframe(pd.DataFrame(gap_rows), use_container_width=True, hide_index=True)
+
+        if "split" in q_lower or "cheapest" in q_lower:
+            st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+            st.markdown("#### Spend Distribution by Supplier (Qualified Split Scenario)")
+            st.caption("Illustrative price-only allocation — not a final award recommendation. Supplier capacity, freight, lead time and commercial terms are excluded.")
+            
+            st.dataframe(calc["split_allocation"], use_container_width=True, height=260, hide_index=True)
+            
+            fig = px.bar(
+                calc["split_allocation"],
+                x="Awarded Supplier",
+                y="Extended Spend (INR)",
+                color_discrete_sequence=[PRIMARY_BLUE],
+                template="plotly_white",
+                title="Spend Distribution by Supplier"
+            )
+            fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     st.caption("Calculation basis: Price-only comparison using quoted unit price × requested quantity. Excludes GST, freight cost amounts, lead time, capacity and other commercial factors.")
     
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
-    # Enhanced Audit CSV Export (Point #19)
+    # Complete Audit Trail CSV Export with Confidence & Reference (Point #18)
     audit_export_rows = []
     for idx, row in st.session_state.master_matrix.iterrows():
         for sname in calc["active_suppliers"]:
@@ -1407,6 +1506,8 @@ elif st.session_state.stage == "Analyze & Decide":
                 "Original Quote": row.get(meta["orig_col"], "—"),
                 "Normalized Unit Price (INR)": row.get(meta["norm_col"], "—"),
                 "Validation Status": row.get(meta["status_col"], "—"),
+                "Confidence": row.get(meta["conf_col"], "95%"),
+                "Source Reference": "Page 1 / Baseline",
                 "Response Source": "Supplier Submitted" if sname in st.session_state.uploaded_suppliers else "Demo Baseline",
                 "Qualification Status": "Qualified" if calc["qualification_status"][sname]["qualified"] else "Disqualified"
             })
