@@ -712,7 +712,7 @@ if st.session_state.stage == "Create RFQ":
     # Actionable "Needs your review" Banner directly above line items
     if st.session_state.rfq_data["unclear_specs"]:
         st.markdown("#### Needs Your Review")
-        st.caption("2 non-blocking items need review before publishing:")
+        st.caption("2 items need confirmation. You can still publish and complete these later:")
         
         rev_c1, rev_c2 = st.columns(2)
         with rev_c1:
@@ -764,11 +764,38 @@ elif st.session_state.stage == "Supplier Responses":
     st.caption("Track supplier submissions, extract quote data and review exceptions before adding them to the comparison.")
 
     # Dynamic Executive Summary Strip
+    responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Suppliers Tracked", len(SUPPLIERS))
+    s1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
     s2.metric("Complete Quotes", f"{sum(1 for v in calc['supplier_totals'].values() if v['is_complete'])} / {len(SUPPLIERS)}")
     s3.metric("Qualified Suppliers", f"{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}")
-    s4.metric("Lines Needing Review", f"{calc['total_line_exceptions']} items")
+    s4.metric("Quote Exceptions", f"{calc['total_line_exceptions']} items")
+
+    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.info("Demo dataset · Preloaded baseline quotes shown below. Uploaded responses override the baseline values.")
+
+    st.markdown("#### Supplier Response Status")
+    
+    inbox_rows = []
+    for sname in SUPPLIERS:
+        info = calc["supplier_totals"][sname]
+        q_info = calc["qualification_status"][sname]
+        
+        coverage = f"{info['lines_quoted']} / {info['total_lines']} lines"
+        qual_str = "Qualified" if q_info["qualified"] else "Disqualified"
+        data_qual = "Complete" if info["is_complete"] else f"{info['total_lines'] - info['lines_quoted']} missing lines"
+        receipt_str = "Quote received" if sname in st.session_state.uploaded_suppliers else "Baseline quote loaded"
+        
+        inbox_rows.append({
+            "Supplier": sname,
+            "Receipt": receipt_str,
+            "Coverage": coverage,
+            "Qualification": qual_str,
+            "Data Quality": data_qual,
+            "Offered Terms": st.session_state.questionnaire_matrix.loc[st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Offered Payment Terms", sname].values[0]
+        })
+        
+    st.dataframe(pd.DataFrame(inbox_rows), use_container_width=True, hide_index=True)
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
@@ -855,14 +882,17 @@ elif st.session_state.stage == "Supplier Responses":
             review_table = []
             for item in p_data["extracted_prices"]:
                 lnum = item.get("line_num")
-                raw_p = item.get("quoted_price") or item.get("price")
+                raw_p = item.get("quoted_price")
+                if raw_p is None:
+                    raw_p = item.get("price")
+                    
                 curr = str(item.get("currency", "INR")).upper()
                 q_uom = str(item.get("quoted_uom", "pc")).lower()
                 conf = item.get("confidence", "95%")
                 src_ref = item.get("source_reference", "Document Body")
                 
                 # Normalization Engine (FX + UOM Scaling)
-                if raw_p:
+                if raw_p is not None:
                     val = float(raw_p)
                     basis_desc = "Direct INR"
                     if curr == "USD":
@@ -883,7 +913,7 @@ elif st.session_state.stage == "Supplier Responses":
                 review_table.append({
                     "Line #": lnum,
                     "Original Quote": quote_str,
-                    "Normalized (INR)": norm_price if norm_price else "—",
+                    "Normalized (INR)": norm_price if norm_price is not None else "—",
                     "Transformation Basis": basis_desc,
                     "Source Reference": src_ref,
                     "Confidence": conf,
@@ -903,11 +933,14 @@ elif st.session_state.stage == "Supplier Responses":
                     
                     for p_item in p_data["extracted_prices"]:
                         lnum = p_item.get("line_num")
-                        raw_price = p_item.get("quoted_price") or p_item.get("price")
+                        raw_price = p_item.get("quoted_price")
+                        if raw_price is None:
+                            raw_price = p_item.get("price")
+                            
                         curr = str(p_item.get("currency", "INR")).upper()
                         q_uom = str(p_item.get("quoted_uom", "pc")).lower()
                         
-                        if lnum and raw_price and norm_col in st.session_state.master_matrix.columns:
+                        if lnum and (raw_price is not None) and norm_col in st.session_state.master_matrix.columns:
                             val = float(raw_price)
                             orig_representation = f"${val:.2f} / pc" if curr == "USD" else f"₹{val:.2f} / {q_uom}"
                             
@@ -936,29 +969,6 @@ elif st.session_state.stage == "Supplier Responses":
                     st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("#### Supplier Response Overview")
-    
-    inbox_rows = []
-    for sname in SUPPLIERS:
-        info = calc["supplier_totals"][sname]
-        q_info = calc["qualification_status"][sname]
-        
-        coverage = f"{info['lines_quoted']} / {info['total_lines']} lines"
-        qual_str = "Qualified" if q_info["qualified"] else "Disqualified"
-        data_qual = "Complete" if info["is_complete"] else f"{info['total_lines'] - info['lines_quoted']} missing lines"
-        receipt_str = "Quote received" if sname in st.session_state.uploaded_suppliers else "Baseline quote loaded"
-        
-        inbox_rows.append({
-            "Supplier": sname,
-            "Receipt": receipt_str,
-            "Coverage": coverage,
-            "Qualification": qual_str,
-            "Data Quality": data_qual,
-            "Offered Terms": st.session_state.questionnaire_matrix.loc[st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Offered Payment Terms", sname].values[0]
-        })
-        
-    st.dataframe(pd.DataFrame(inbox_rows), use_container_width=True, hide_index=True)
-
     st.caption("Data handling notes: Prior-year reference prices were not used as current quotes. USD quotes are normalized using the demo FX rate of ₹83.50/USD.")
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
@@ -981,15 +991,17 @@ elif st.session_state.stage == "Compare Bids":
     st.caption("Compare normalized unit prices, coverage and qualification compliance across submitted supplier quotes.")
 
     # Executive Summary Breakdown Strip
+    responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Responses Tracked", len(SUPPLIERS))
+    c1.metric("Responses Received", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
     c2.metric("Qualified Vendors", f"{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}")
     c3.metric("Complete Quotes", f"{sum(1 for v in calc['supplier_totals'].values() if v['is_complete'])}")
-    c4.metric("Lines Needing Review", f"{calc['total_line_exceptions']}")
+    c4.metric("Quote Exceptions", f"{calc['total_line_exceptions']}")
 
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.info("Demo dataset · Preloaded baseline quotes shown below. Uploaded responses override the baseline values.")
     
-    # Extended Quoted Value Summary Table
+    # Quoted Value Summary Table
     summary_rows = []
     for sname in SUPPLIERS:
         info = calc["supplier_totals"][sname]
@@ -1001,7 +1013,7 @@ elif st.session_state.stage == "Compare Bids":
             "Coverage": f"{info['lines_quoted']} / {info['total_lines']} lines",
             "Qualification": "Qualified" if q_info['qualified'] else "Disqualified",
             "Data Quality": "Complete" if info['is_complete'] else f"Incomplete ({info['total_lines'] - info['lines_quoted']} unquoted)",
-            "Extended Quoted Value (INR)": spend_str
+            "Quoted value — available lines": spend_str
         })
         
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
@@ -1044,17 +1056,17 @@ elif st.session_state.stage == "Compare Bids":
         def style_matrix_cells(row):
             styles = [''] * len(row)
             
-            # Identify qualified supplier column indices dynamically
+            # Identify qualified supplier column indices dynamically using SUPPLIERS list
             qual_col_indices = []
             for col_idx in range(4, len(row)):
-                sname = list(SUPPLIER_MAP.keys())[col_idx - 4]
+                sname = SUPPLIERS[col_idx - 4]
                 if calc["qualification_status"].get(sname, {}).get("qualified", False):
                     qual_col_indices.append(col_idx)
 
             valid_prices = {}
             for col_idx in range(4, len(row)):
                 val = row.iloc[col_idx]
-                sname = list(SUPPLIER_MAP.keys())[col_idx - 4]
+                sname = SUPPLIERS[col_idx - 4]
                 status = str(st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == row["Line #"], SUPPLIER_MAP[sname]["status_col"]].values[0]).upper()
                 
                 if status == "REVIEW REQUIRED":
@@ -1081,6 +1093,7 @@ elif st.session_state.stage == "Compare Bids":
             <span>— Unquoted / Missing</span>
         </div>
         """, unsafe_allow_html=True)
+        st.caption("Normalization: USD → INR at ₹83.50/USD · Quoted prices normalized to requested UOM.")
 
     with tab_comp2:
         st.markdown("#### Qualification Checks Evaluation")
@@ -1091,9 +1104,9 @@ elif st.session_state.stage == "Compare Bids":
             q_info = calc["qualification_status"][sname]
             qual_summary.append({
                 "Supplier": sname,
-                "ISO 9001 Met": "YES" if "YES" in str(q_info["iso"]).upper() else "NO",
+                "ISO 9001": "YES" if "YES" in str(q_info["iso"]).upper() else "NO",
                 "Defect Rate": q_info["defect"],
-                "Status": "Qualified" if q_info["qualified"] else "Disqualified",
+                "Qualification": "Qualified" if q_info["qualified"] else "Disqualified",
                 "Reason / Notes": q_info["reason"]
             })
         st.dataframe(pd.DataFrame(qual_summary), use_container_width=True, hide_index=True)
@@ -1214,13 +1227,13 @@ elif st.session_state.stage == "Analyze & Decide":
                         with m3:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for v in calc['supplier_totals'].values() if not v['is_complete'])}</div><div class='metric-card-lbl'>Incomplete Quotes</div></div>", unsafe_allow_html=True)
                         with m4:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Lines Needing Review</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_line_exceptions']}</div><div class='metric-card-lbl'>Quote Exceptions</div></div>", unsafe_allow_html=True)
                     else:
                         m1, m2, m3, m4 = st.columns(4)
                         with m1:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{calc['split_spend']:,.0f}</div><div class='metric-card-lbl'>Illustrative Split Spend</div></div>", unsafe_allow_html=True)
                         with m2:
-                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{abs(calc['price_diff']):,.0f} {delta_direction}</div><div class='metric-card-lbl'>Delta vs Complete ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='metric-card'><div class='metric-card-val'>₹{abs(calc['price_diff']):,.0f} {delta_direction}</div><div class='metric-card-lbl'>Delta vs Lowest Complete Qualified ({calc['price_diff_pct']}%)</div></div>", unsafe_allow_html=True)
                         with m3:
                             st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{calc['total_qualified_suppliers']} / {len(SUPPLIERS)}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
                         with m4:
@@ -1230,12 +1243,12 @@ elif st.session_state.stage == "Analyze & Decide":
                     c1, c2 = st.columns(2)
                     with c1:
                         if parsed_ans.get("key_drivers"):
-                            st.markdown("**AI Interpretation · Key drivers**")
+                            st.markdown("**Key drivers**")
                             for kd in parsed_ans["key_drivers"]:
                                 st.markdown(f"* {kd}")
                     with c2:
                         if parsed_ans.get("trade_offs"):
-                            st.markdown("**AI Interpretation · Trade-offs & Considerations**")
+                            st.markdown("**Trade-offs & Considerations**")
                             for to in parsed_ans["trade_offs"]:
                                 st.markdown(f"* {to}")
                                 
@@ -1274,7 +1287,7 @@ elif st.session_state.stage == "Analyze & Decide":
     if user_query and ("split" in user_query.lower() or "cheapest" in user_query.lower()):
         st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
         st.markdown("#### Spend Distribution by Supplier (Qualified Split Scenario)")
-        st.caption("Price-only scenario allocation — not a final award recommendation.")
+        st.caption("Illustrative price-only allocation — not a final award recommendation. Supplier capacity, freight, lead time and commercial terms are excluded.")
         
         st.dataframe(calc["split_allocation"], use_container_width=True, height=260, hide_index=True)
         
