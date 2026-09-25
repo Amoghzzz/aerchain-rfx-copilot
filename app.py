@@ -204,7 +204,6 @@ def invalidate_analysis_snapshot():
     st.session_state.last_analysis_query = None
     st.session_state.last_analysis_context = None
 
-# Point #10: Dataset Fingerprint Hashing Engine
 def compute_dataset_fingerprint():
     rfq_str = json.dumps(st.session_state.rfq_data["line_items"], sort_keys=True)
     matrix_str = st.session_state.master_matrix.to_json()
@@ -496,7 +495,7 @@ def sync_rfq_to_master_matrix():
 sync_rfq_to_master_matrix()
 
 # -----------------------------------------------------------------------------
-# 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE (Points #7 & #8 Fixes)
+# 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE (Point #9 Verification)
 # -----------------------------------------------------------------------------
 def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, is_demo_mode):
     is_baseline_valid = rfq_matches_demo_baseline()
@@ -548,7 +547,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     exception_line_numbers = set()
     dynamic_issue_descriptions = []
 
-    # Point #7/8 FIX: Check if uploaded supplier quotes predated current RFQ requirements
+    # Point #9 FIX: Check if uploaded supplier quotes predated current RFQ requirements
     for sname in uploaded_suppliers_set:
         quote_fp = st.session_state.supplier_quote_fingerprints.get(sname, "")
         if quote_fp and quote_fp != current_rfq_fp:
@@ -631,6 +630,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         if v["qualified"] and v["is_complete"] and not v["is_stale"]
     }
     
+    # Point #35 FIX: Terminology standard -> Lowest Complete Qualified Quote
     if qualified_complete:
         best_single_name = min(qualified_complete, key=qualified_complete.get)
         best_single_spend = qualified_complete[best_single_name]
@@ -706,7 +706,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     }
 
 # -----------------------------------------------------------------------------
-# 8. FLAT INTEGRATED HEADER & SEQUENTIAL STEPPER (Point #17 Pending Review Warning)
+# 8. FLAT INTEGRATED HEADER & SEQUENTIAL STEPPER (Point #31 Pending Extraction Navigation Guard)
 # -----------------------------------------------------------------------------
 st.markdown(f"""
 <div class="flat-header">
@@ -727,16 +727,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Point #17 FIX: Explicit Pending Extraction Warning before navigating
+# Point #31 FIX: Explicit Pending Extraction Navigation Guard
 if st.session_state.pending_extraction:
     pending_vendor = st.session_state.pending_extraction.get("supplier", "Vendor")
-    st.warning(f"⚠️ **Pending Extraction Warning:** Unapplied extraction data exists for **{pending_vendor}**. Please apply or discard the extracted quote below to ensure comparison matrix accuracy.")
+    st.warning(f"⚠️ **Pending Extraction Review:** Extracted quote data for **{pending_vendor}** has not yet been added to the comparison matrix. Please apply or discard the extracted quote below before proceeding.")
 
 stages = [
     ("Create RFQ", "Requirements", True),
     ("Supplier Responses", "Responses", st.session_state.responses_unlocked),
-    ("Compare Bids", "Compare", st.session_state.compare_unlocked),
-    ("Analyze & Decide", "Analyze", st.session_state.analyze_unlocked)
+    ("Compare Bids", "Compare", st.session_state.compare_unlocked and not st.session_state.pending_extraction),
+    ("Analyze & Decide", "Analyze", st.session_state.analyze_unlocked and not st.session_state.pending_extraction)
 ]
 cur_idx = [s[0] for s in stages].index(st.session_state.stage)
 
@@ -758,7 +758,7 @@ for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
             st.session_state.stage = stage_key
             st.rerun()
         if not is_unlocked:
-            st.caption("Available in sequence")
+            st.caption("Action required" if st.session_state.pending_extraction and idx > 1 else "Available in sequence")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
@@ -908,7 +908,7 @@ if st.session_state.stage == "Create RFQ":
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# STAGE 2: SUPPLIER RESPONSES
+# STAGE 2: SUPPLIER RESPONSES (Points #4 & #5 Strict Currency/Basis Fix)
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Supplier Responses":
     st.markdown("### Supplier responses")
@@ -939,7 +939,6 @@ elif st.session_state.stage == "Supplier Responses":
 
     responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     s1, s2, s3, s4 = st.columns(4)
-    # Point #15 FIX: Visually explicit response metrics
     if st.session_state.demo_mode:
         s1.metric("Uploaded Responses", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
         s2.metric("Demo Baseline Quotes", f"5 / 5")
@@ -1075,10 +1074,11 @@ elif st.session_state.stage == "Supplier Responses":
         st.markdown(f"#### Review Extracted Quote: **{sname}**")
         st.caption(f"Source file: `{st.session_state.pending_extraction['file_name']}` &nbsp;·&nbsp; Complete audit representation")
         
+        # Point #7 FIX: Prominent Supplier Mismatch Exception Panel
         confirm_override = True
         if has_mismatch:
-            st.info(f"ℹ **Supplier identity confirmation required:** Selected target vendor is **{sname}**, but document header indicates **'{detected_vendor}'**.")
-            confirm_override = st.checkbox(f"Confirm: This quotation belongs to **{sname}**", value=False)
+            st.warning(f"⚠ **Supplier Identity Confirmation Required:** Selected vendor is **{sname}**, but document header indicates **'{detected_vendor}'**.")
+            confirm_override = st.checkbox(f"☑ I confirm this document belongs to **{sname}**", value=False)
 
         valid_rfq_map = {it["Line #"]: it for it in st.session_state.rfq_data["line_items"]}
         seen_lines = set()
@@ -1111,7 +1111,6 @@ elif st.session_state.stage == "Supplier Responses":
             except Exception:
                 conf_num = 95.0
                 
-            # Point #20 FIX: Clean Audit Source Reference Handling
             raw_src_ref = item.get("source_reference")
             src_ref = raw_src_ref if (raw_src_ref and pd.notna(raw_src_ref) and str(raw_src_ref).strip()) else "Source Reference Unavailable"
             
@@ -1125,7 +1124,6 @@ elif st.session_state.stage == "Supplier Responses":
             is_duplicate = lnum in seen_lines
             is_valid_price = (raw_p is not None) and (raw_p > 0)
             
-            # Point #5 FIX: Strict UOM Conversion Validation Rule
             req_uom = str(valid_rfq_map.get(lnum, {}).get("UOM", "pcs")).lower()
             uom_match = (req_uom == q_uom) or (req_uom in ["pc", "pcs"] and q_uom in ["pc", "pcs"])
             uom_convertible = uom_match or (q_uom in ["100 pcs", "100pcs", "box of 100 pcs"] and basis_qty == 100.0)
@@ -1134,24 +1132,32 @@ elif st.session_state.stage == "Supplier Responses":
                 seen_lines.add(lnum)
                 matched_count += 1
                 
-                norm_price = round((raw_p * fx) / (basis_qty if is_valid_basis else 1.0), 2)
-                is_normalized = (curr == "USD") or (basis_qty != 1.0)
-                
-                if not uom_convertible:
+                # Points #4 & #5 FIX: Strict NULL handling for unsupported currency or invalid basis
+                if not is_known_currency:
+                    norm_price = None
+                    status_str = "REVIEW REQUIRED"
+                    basis_desc = f"Unsupported currency ({curr}) — INR normalization unavailable"
+                    needs_review_count += 1
+                elif not is_valid_basis:
+                    norm_price = None
+                    status_str = "REVIEW REQUIRED"
+                    basis_desc = f"Invalid price basis quantity ({basis_qty}) — normalization unavailable"
+                    needs_review_count += 1
+                elif not uom_convertible:
+                    norm_price = None
                     status_str = "REVIEW REQUIRED"
                     basis_desc = f"UOM mismatch ({q_uom} vs requested {req_uom}) — conversion factor unavailable"
                     needs_review_count += 1
-                elif conf_num < 90.0 or not is_valid_basis or not is_known_currency:
+                elif conf_num < 90.0:
+                    norm_price = round((raw_p * fx) / basis_qty, 2)
                     status_str = "REVIEW REQUIRED"
-                    basis_desc = f"Low confidence ({conf_num:.0f}%) or basis ambiguity"
+                    basis_desc = f"Low extraction confidence ({conf_num:.0f}%) — verification required"
                     needs_review_count += 1
-                elif is_normalized:
-                    status_str = "NORMALIZED"
-                    basis_desc = f"{'USD → INR' if curr == 'USD' else 'Direct INR'} (/{basis_qty:g} → /pc)"
-                    validated_count += 1
                 else:
-                    status_str = "CONFIRMED"
-                    basis_desc = "Direct INR"
+                    norm_price = round((raw_p * fx) / basis_qty, 2)
+                    is_normalized = (curr == "USD") or (basis_qty != 1.0)
+                    status_str = "NORMALIZED" if is_normalized else "CONFIRMED"
+                    basis_desc = f"{'USD → INR' if curr == 'USD' else 'Direct INR'} (/{basis_qty:g} → /pc)" if is_normalized else "Direct INR"
                     validated_count += 1
                     
                 quote_str = orig_verbatim if orig_verbatim else (f"${raw_p:.2f} / pc" if curr == "USD" else f"₹{raw_p:.2f} / {q_uom}")
@@ -1230,17 +1236,17 @@ elif st.session_state.stage == "Supplier Responses":
             st.session_state.stage = "Create RFQ"
             st.rerun()
     with b2:
-        if st.button("Continue to Compare Quotes →", type="primary"):
+        if st.button("Continue to Compare Quotes →", type="primary", disabled=bool(st.session_state.pending_extraction)):
             st.session_state.compare_unlocked = True
             st.session_state.stage = "Compare Bids"
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# STAGE 3: COMPARE QUOTES
+# STAGE 3: COMPARE QUOTES (Point #13 Disclaimer Fix)
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Compare Bids":
     st.markdown("### Compare quotes")
-    st.caption("Compare normalized unit prices, coverage and qualification compliance across submitted supplier quotes.")
+    st.caption("Compare normalized prices, quote coverage and qualification status. Values marked Review Required or Stale are excluded from sourcing calculations.")
 
     demo_c1, demo_c2 = st.columns([3, 1])
     with demo_c1:
@@ -1326,7 +1332,6 @@ elif st.session_state.stage == "Compare Bids":
             
         matrix_display = st.session_state.master_matrix[matrix_cols].copy()
         
-        # Point #16 FIX: Richer Column Headers with Qualification & Provenance
         col_rename_map = {"Quantity": "Qty"}
         for sname in calc["active_suppliers"]:
             q_lbl = "Qualified" if calc["qualification_status"].get(sname, {}).get("qualified", False) else "Disqualified"
@@ -1344,7 +1349,6 @@ elif st.session_state.stage == "Compare Bids":
             if col_key in matrix_display.columns:
                 matrix_display[col_key] = matrix_display[col_key].astype(str).replace(["nan", "None", "<NA>"], "—")
 
-        # Point #6 FIX: Exclude REVIEW REQUIRED cells from Lowest Price highlighting
         def style_matrix_cells(row):
             styles = [''] * len(row)
             
@@ -1361,7 +1365,6 @@ elif st.session_state.stage == "Compare Bids":
                 sname = calc["active_suppliers"][col_idx - 4]
                 status = str(st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == row["Line #"], SUPPLIER_MAP[sname]["status_col"]].values[0]).upper()
                 
-                # CRITICAL FIX: Skip REVIEW REQUIRED cells so they cannot enter valid_prices
                 if status == "REVIEW REQUIRED":
                     styles[col_idx] = 'background-color: #FFFBEB; color: #B45309;'
                     continue
@@ -1380,10 +1383,11 @@ elif st.session_state.stage == "Compare Bids":
         styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
         st.dataframe(styled_matrix, use_container_width=True, height=440, hide_index=True)
         
+        # Point #13 FIX: Clarified Legend Disclaimer
         st.markdown("""
         <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
             <strong>Legend:</strong> &nbsp;
-            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">Lowest usable qualified price for this line — price comparison only</span> &nbsp;
+            <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">Lowest usable qualified price — price comparison only, not an award recommendation</span> &nbsp;
             <span style="background-color: #FFFBEB; color: #B45309; padding: 2px 6px; border-radius: 4px; border: 1px solid #FEF08A;">Review required (excluded from sourcing)</span> &nbsp;
             <span>— Unquoted / Missing</span>
         </div>
@@ -1419,7 +1423,7 @@ elif st.session_state.stage == "Compare Bids":
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# STAGE 4: SCENARIO ANALYSIS (Point #10 Snapshot Fingerprint Fix)
+# STAGE 4: SCENARIO ANALYSIS (Points #20 & #22 Terminology Fixes)
 # -----------------------------------------------------------------------------
 elif st.session_state.stage == "Analyze & Decide":
     st.markdown("### Scenario analysis")
@@ -1434,7 +1438,6 @@ elif st.session_state.stage == "Analyze & Decide":
 
     current_dataset_fp = compute_dataset_fingerprint()
 
-    # Point #10 FIX: Check dataset fingerprint hash for stale analysis detection
     if st.session_state.last_analysis_context:
         saved_ctx = st.session_state.last_analysis_context
         is_stale = saved_ctx.get("dataset_hash") != current_dataset_fp
@@ -1480,7 +1483,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 - Spend calculations use defined Python sourcing rules:
                   * Lowest Complete Qualified Single Quote: {calc['best_single_name']} at ₹{calc['best_single_spend']:,.0f}
                   * Qualified Split Scenario Spend: ₹{calc['split_spend']:,.0f} (Unassigned lines: {calc['unassigned_count']})
-                  * Price Delta vs Lowest Complete Quote: ₹{abs(calc['price_diff']):,.0f} {delta_direction} ({calc['price_diff_pct']}%)
+                  * Price Delta vs Lowest Complete Qualified Quote: ₹{abs(calc['price_diff']):,.0f} {delta_direction} ({calc['price_diff_pct']}%)
                   * Disqualified Suppliers: {disqual_str}
                 
                 OUTPUT STRUCTURE REQUIREMENT:
@@ -1556,7 +1559,6 @@ elif st.session_state.stage == "Analyze & Decide":
         st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
         q_lower = active_query.lower()
 
-        # Point #12 FIX: Simplified Stage 4 Metric Terminology
         if "landed" in q_lower or "gst" in q_lower or "freight" in q_lower:
             m1, m2, m3, m4 = st.columns(4)
             with m1:
@@ -1597,11 +1599,6 @@ elif st.session_state.stage == "Analyze & Decide":
                 st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Net 60</div><div class='metric-card-lbl'>RFQ Benchmark</div></div>", unsafe_allow_html=True)
 
         elif "capacity" in q_lower or "volume" in q_lower:
-            cap_series = st.session_state.questionnaire_matrix.loc[
-                st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Monthly Packaging Capacity",
-                calc["active_suppliers"]
-            ].iloc[0]
-            
             rfq_uoms = set(it["UOM"] for it in st.session_state.rfq_data["line_items"])
             if len(rfq_uoms) == 1:
                 single_uom = list(rfq_uoms)[0]
@@ -1610,24 +1607,16 @@ elif st.session_state.stage == "Analyze & Decide":
             else:
                 vol_metric_val = f"Mixed UOMs ({len(st.session_state.rfq_data['line_items'])} lines)"
 
-            cap_nums = []
-            for v in cap_series.values:
-                try:
-                    num = float(re.findall(r"[-+]?\d*\.\d+|\d+", str(v))[0])
-                    cap_nums.append(num)
-                except Exception:
-                    pass
-            max_cap_str = f"{max(cap_nums):.1f}M pcs/mo" if cap_nums else "1.5M pcs/mo"
-
+            # Point #20 FIX: Decision-useful capacity metrics
             m1, m2, m3, m4 = st.columns(4)
             with m1:
                 st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{vol_metric_val}</div><div class='metric-card-lbl'>Required RFQ Volume</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{max_cap_str}</div><div class='metric-card-lbl'>Highest Monthly Cap</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['active_count']} / {ctx['active_count']}</div><div class='metric-card-lbl'>Reporting Vendors</div></div>", unsafe_allow_html=True)
             with m3:
                 st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Monthly</div><div class='metric-card-lbl'>Capacity Basis</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Reference</div><div class='metric-card-lbl'>Assessment Status</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Inconclusive</div><div class='metric-card-lbl'>Assessment Status</div></div>", unsafe_allow_html=True)
             st.caption("ℹ Supplier capacity is reported monthly. RFQ fulfillment period is not specified, so capacity sufficiency cannot be conclusively determined.")
 
         elif "split" in q_lower or "cheapest" in q_lower or "award" in q_lower or "lowest" in q_lower:
@@ -1636,8 +1625,9 @@ elif st.session_state.stage == "Analyze & Decide":
             spend_label = f"₹{ctx['split_spend']:,.0f}" if ctx['unassigned_count'] == 0 else f"Partial: ₹{ctx['split_spend']:,.0f}"
             delta_label = f"₹{abs(ctx['price_diff']):,.0f} {'lower' if ctx['price_diff'] >= 0 else 'higher'}" if ctx['unassigned_count'] == 0 else "Unavailable"
             
+            # Point #22 FIX: "Illustrative Split Spend" metric label
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{spend_label}</div><div class='metric-card-lbl'>Split Spend ({assigned_lines_count}/{ctx['line_count']} lines)</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{spend_label}</div><div class='metric-card-lbl'>Illustrative Split Spend ({assigned_lines_count}/{ctx['line_count']} lines)</div></div>", unsafe_allow_html=True)
             with m2:
                 st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{delta_label}</div><div class='metric-card-lbl'>Delta vs Complete Qualified</div></div>", unsafe_allow_html=True)
             with m3:
@@ -1738,14 +1728,26 @@ elif st.session_state.stage == "Analyze & Decide":
     
     st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
     
-    # Point #20 FIX: Clean Audit Export with explicit Source Reference Handling
+    # Point #26 FIX: Enriched Audit Export with RFQ Fingerprint & Quote Version Status
+    current_rfq_fp = st.session_state.rfq_data.get("rfq_fingerprint", "N/A")
     audit_export_rows = []
+    
     for idx, row in st.session_state.master_matrix.iterrows():
         for sname in calc["active_suppliers"]:
             meta = SUPPLIER_MAP[sname]
             raw_src = row.get(meta["source_col"])
             clean_src = raw_src if (raw_src and pd.notna(raw_src) and str(raw_src).strip()) else "Source Reference Unavailable"
             
+            is_submitted = sname in st.session_state.uploaded_suppliers
+            quote_fp = st.session_state.supplier_quote_fingerprints.get(sname, "") if is_submitted else current_rfq_fp
+            
+            if is_submitted and quote_fp != current_rfq_fp:
+                q_ver_status = "STALE — REVALIDATION REQUIRED"
+            elif is_submitted:
+                q_ver_status = "Current"
+            else:
+                q_ver_status = "Demo Baseline"
+
             audit_export_rows.append({
                 "Line #": row["Line #"],
                 "Description": row["Description"],
@@ -1757,7 +1759,9 @@ elif st.session_state.stage == "Analyze & Decide":
                 "Validation Status": row.get(meta["status_col"], "—"),
                 "Extraction Confidence": row.get(meta["conf_col"], "—"),
                 "Source Reference": clean_src,
-                "Response Source": "Supplier Submitted" if sname in st.session_state.uploaded_suppliers else "Demo Baseline",
+                "Response Source": "Supplier Submitted" if is_submitted else "Demo Baseline",
+                "Quote Version Status": q_ver_status,
+                "RFQ Fingerprint": current_rfq_fp,
                 "Qualification Status": "Qualified" if calc["qualification_status"][sname]["qualified"] else "Disqualified"
             })
             
