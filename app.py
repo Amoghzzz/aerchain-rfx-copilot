@@ -26,11 +26,44 @@ try:
 except ImportError:
     docx = None
 
-# -----------------------------------------------------------------------------
-# 1. CENTRALIZED CONSTANTS & DESIGN SYSTEM
-# -----------------------------------------------------------------------------
+# =============================================================================
+# DESIGN SYSTEM TOKENS & CONSTANTS
+# =============================================================================
 DEMO_FX_RATE = 83.50  # USD to INR Demo FX Normalization Rate
-PRIMARY_BLUE = "#2563EB"
+
+DESIGN_SYSTEM = {
+    "colors": {
+        "bg_app": "#F8FAFC",
+        "surface_card": "#FFFFFF",
+        "border_subtle": "#E2E8F0",
+        "border_strong": "#CBD5E1",
+        "text_primary": "#0F172A",
+        "text_secondary": "#475569",
+        "text_muted": "#64748B",
+        "accent_primary": "#2563EB",
+        "accent_hover": "#1D4ED8",
+        "status_success_bg": "#F0FDF4",
+        "status_success_text": "#166534",
+        "status_success_border": "#BBF7D0",
+        "status_warning_bg": "#FFFBEB",
+        "status_warning_text": "#B45309",
+        "status_warning_border": "#FEF08A",
+        "status_danger_bg": "#FEF2F2",
+        "status_danger_text": "#991B1B",
+        "status_danger_border": "#FECACA",
+        "status_info_bg": "#F0F9FF",
+        "status_info_text": "#0369A1",
+        "status_info_border": "#BAE6FD"
+    },
+    "typography": {
+        "font_family": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    },
+    "radius": {
+        "sm": "4px",
+        "md": "6px",
+        "lg": "8px"
+    }
+}
 
 SUPPLIERS = [
     "Apex Packaging",
@@ -48,9 +81,9 @@ SUPPLIER_MAP = {
     "PackTech Solutions": {"prefix": "PackTech", "orig_col": "PackTech_Orig_Price", "norm_col": "PackTech_Norm_INR", "status_col": "PackTech_Status", "conf_col": "PackTech_Confidence", "source_col": "PackTech_Source_Ref"}
 }
 
-# -----------------------------------------------------------------------------
-# 2. PAGE CONFIGURATION & ENTERPRISE SaaS STYLING
-# -----------------------------------------------------------------------------
+# =============================================================================
+# PAGE CONFIGURATION & ENTERPRISE SaaS STYLING ARCHITECTURE
+# =============================================================================
 st.set_page_config(
     page_title="Aerchain | Procurement Intelligence Workspace",
     page_icon="📦",
@@ -58,106 +91,201 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-st.markdown("""
+st.markdown(f"""
     <style>
-    /* Base Setup & Background */
-    .stApp {
-        background-color: #F8FAFC;
-        color: #0F172A;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
+    /* ------------------------------------------------------------------------
+       1. GLOBAL RESETS & TYPOGRAPHY
+       ------------------------------------------------------------------------ */
+    .stApp {{
+        background-color: {DESIGN_SYSTEM['colors']['bg_app']};
+        color: {DESIGN_SYSTEM['colors']['text_primary']};
+        font-family: {DESIGN_SYSTEM['typography']['font_family']};
+        -webkit-font-smoothing: antialiased;
+    }}
     
-    [data-testid="stSidebar"] { display: none; }
+    [data-testid="stSidebar"] {{ display: none; }}
     
-    /* Header Container - Flat Integration */
-    .flat-header {
-        background-color: #FFFFFF;
-        border-bottom: 1px solid #E2E8F0;
-        padding: 20px 32px 16px 32px;
-        margin-bottom: 0px;
-    }
-    
-    .section-spacing {
-        height: 16px;
-    }
-    
-    /* Workspace Sections */
-    .workspace-section {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 6px;
-        padding: 24px;
-        margin-bottom: 20px;
-    }
+    /* Hide Streamlit default chrome elements */
+    #MainMenu, footer, header {{ visibility: hidden; }}
+    .block-container {{
+        padding-top: 1rem !important;
+        padding-bottom: 3rem !important;
+        max-width: 1400px;
+    }}
 
-    /* Structured Output Metric Cards */
-    .metric-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-radius: 6px;
-        padding: 16px;
-        text-align: center;
-    }
-    .metric-card-val {
-        font-size: 1.35rem;
-        font-weight: 700;
-        color: #0F172A;
-    }
-    .metric-card-lbl {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: #64748B;
+    /* ------------------------------------------------------------------------
+       2. APP SHELL & PRODUCT HEADER
+       ------------------------------------------------------------------------ */
+    .aerchain-app-header {{
+        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
+        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        border-radius: {DESIGN_SYSTEM['radius']['lg']};
+        padding: 16px 24px;
+        margin-bottom: 16px;
+    }}
+    
+    .aerchain-brand-row {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        padding-bottom: 10px;
+        margin-bottom: 12px;
+    }}
+    
+    .brand-mark {{
+        font-size: 0.82rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: {DESIGN_SYSTEM['colors']['text_primary']};
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-top: 4px;
-    }
-    
-    /* Status Badges */
-    .badge-confirmed { background-color: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .badge-normalized { background-color: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .badge-review { background-color: #FFFBEB; color: #B45309; border: 1px solid #FEF08A; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .badge-missing { background-color: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .badge-status { background-color: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-    .badge-datagap { background-color: #F8FAFC; color: #475569; border: 1px solid #CBD5E1; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-
-    /* Button Hierarchy Overrides */
-    .stButton button[kind="primary"] {
-        background-color: #2563EB !important;
-        color: #FFFFFF !important;
-        border: 1px solid #2563EB !important;
-        font-weight: 500 !important;
-        border-radius: 6px !important;
-    }
-    .stButton button[kind="primary"]:hover {
-        background-color: #1D4ED8 !important;
-    }
-    .stButton button[kind="secondary"] {
-        background-color: #FFFFFF !important;
-        color: #334155 !important;
-        border: 1px solid #CBD5E1 !important;
-        font-weight: 500 !important;
-        border-radius: 6px !important;
-    }
-    .stButton button[kind="secondary"]:hover {
-        background-color: #F1F5F9 !important;
-    }
-    
-    /* Horizontal Stepper Bar Container */
-    .stepper-flat-container {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        background-color: #FFFFFF;
-        border-bottom: 1px solid #E2E8F0;
-        padding: 12px 32px;
-        margin-bottom: 24px;
-    }
+        gap: 8px;
+    }}
+    
+    .rfq-meta-line {{
+        font-size: 0.82rem;
+        color: {DESIGN_SYSTEM['colors']['text_secondary']};
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }}
+
+    /* ------------------------------------------------------------------------
+       3. WORKFLOW STEPPER BAR
+       ------------------------------------------------------------------------ */
+    .workflow-stepper-container {{
+        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
+        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        border-radius: {DESIGN_SYSTEM['radius']['lg']};
+        padding: 8px 16px;
+        margin-bottom: 20px;
+    }}
+
+    /* ------------------------------------------------------------------------
+       4. WORKSPACE SECTIONS & SURFACES
+       ------------------------------------------------------------------------ */
+    .aerchain-section {{
+        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
+        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        border-radius: {DESIGN_SYSTEM['radius']['lg']};
+        padding: 24px;
+        margin-bottom: 20px;
+    }}
+
+    .section-header-title {{
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: {DESIGN_SYSTEM['colors']['text_primary']};
+        margin: 0 0 4px 0;
+        letter-spacing: -0.01em;
+    }}
+
+    .section-header-subtitle {{
+        font-size: 0.82rem;
+        color: {DESIGN_SYSTEM['colors']['text_secondary']};
+        margin: 0 0 16px 0;
+    }}
+
+    /* ------------------------------------------------------------------------
+       5. METRIC & KPI CARDS
+       ------------------------------------------------------------------------ */
+    .kpi-card {{
+        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
+        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        border-radius: {DESIGN_SYSTEM['radius']['md']};
+        padding: 16px;
+        text-align: left;
+    }}
+    .kpi-label {{
+        font-size: 0.70rem;
+        font-weight: 600;
+        color: {DESIGN_SYSTEM['colors']['text_muted']};
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+    }}
+    .kpi-value {{
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: {DESIGN_SYSTEM['colors']['text_primary']};
+        line-height: 1.2;
+    }}
+    .kpi-subtext {{
+        font-size: 0.75rem;
+        color: {DESIGN_SYSTEM['colors']['text_secondary']};
+        margin-top: 4px;
+    }}
+
+    /* ------------------------------------------------------------------------
+       6. BADGES & STATUS INDICATORS
+       ------------------------------------------------------------------------ */
+    .badge-base {{
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: {DESIGN_SYSTEM['radius']['sm']};
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }}
+    .badge-confirmed {{ background-color: {DESIGN_SYSTEM['colors']['status_success_bg']}; color: {DESIGN_SYSTEM['colors']['status_success_text']}; border: 1px solid {DESIGN_SYSTEM['colors']['status_success_border']}; }}
+    .badge-normalized {{ background-color: {DESIGN_SYSTEM['colors']['status_info_bg']}; color: {DESIGN_SYSTEM['colors']['status_info_text']}; border: 1px solid {DESIGN_SYSTEM['colors']['status_info_border']}; }}
+    .badge-review {{ background-color: {DESIGN_SYSTEM['colors']['status_warning_bg']}; color: {DESIGN_SYSTEM['colors']['status_warning_text']}; border: 1px solid {DESIGN_SYSTEM['colors']['status_warning_border']}; }}
+    .badge-danger {{ background-color: {DESIGN_SYSTEM['colors']['status_danger_bg']}; color: {DESIGN_SYSTEM['colors']['status_danger_text']}; border: 1px solid {DESIGN_SYSTEM['colors']['status_danger_border']}; }}
+    .badge-neutral {{ background-color: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; }}
+
+    /* ------------------------------------------------------------------------
+       7. BUTTONS & FORM INPUTS
+       ------------------------------------------------------------------------ */
+    .stButton button[kind="primary"] {{
+        background-color: {DESIGN_SYSTEM['colors']['accent_primary']} !important;
+        color: #FFFFFF !important;
+        border: 1px solid {DESIGN_SYSTEM['colors']['accent_primary']} !important;
+        font-weight: 500 !important;
+        border-radius: {DESIGN_SYSTEM['radius']['md']} !important;
+        padding: 6px 16px !important;
+        font-size: 0.85rem !important;
+    }}
+    .stButton button[kind="primary"]:hover {{
+        background-color: {DESIGN_SYSTEM['colors']['accent_hover']} !important;
+    }}
+    .stButton button[kind="secondary"] {{
+        background-color: #FFFFFF !important;
+        color: {DESIGN_SYSTEM['colors']['text_primary']} !important;
+        border: 1px solid {DESIGN_SYSTEM['colors']['border_strong']} !important;
+        font-weight: 500 !important;
+        border-radius: {DESIGN_SYSTEM['radius']['md']} !important;
+        padding: 6px 16px !important;
+        font-size: 0.85rem !important;
+    }}
+    .stButton button[kind="secondary"]:hover {{
+        background-color: #F1F5F9 !important;
+    }}
+
+    /* Decision basis column styles */
+    .decision-list-item {{
+        font-size: 0.83rem;
+        color: {DESIGN_SYSTEM['colors']['text_primary']};
+        padding: 6px 0;
+        border-bottom: 1px dashed {DESIGN_SYSTEM['colors']['border_subtle']};
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }}
+    
+    .section-divider {{
+        height: 1px;
+        background-color: {DESIGN_SYSTEM['colors']['border_subtle']};
+        margin: 20px 0;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 3. VERTEX AI CLIENT INITIALIZATION
-# -----------------------------------------------------------------------------
+# =============================================================================
+# VERTEX AI CLIENT INITIALIZATION
+# =============================================================================
 @st.cache_resource
 def get_genai_client():
     creds_dict = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
@@ -212,9 +340,9 @@ def compute_dataset_fingerprint():
     combined = f"{rfq_str}|{matrix_str}|{demo_str}|{uploaded_str}"
     return hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
-# -----------------------------------------------------------------------------
-# 4. UNTRUNCATED NATIVE DOCUMENT EXTRACTION HELPERS
-# -----------------------------------------------------------------------------
+# =============================================================================
+# UNTRUNCATED NATIVE DOCUMENT EXTRACTION HELPERS
+# =============================================================================
 def parse_raw_document_content(file_bytes, filename, mime_type):
     extracted_text = ""
     
@@ -256,9 +384,9 @@ def parse_raw_document_content(file_bytes, filename, mime_type):
         
     return extracted_text if extracted_text.strip() else file_bytes.decode("utf-8", errors="ignore")
 
-# -----------------------------------------------------------------------------
-# 5. CANONICAL DATASETS & INITIAL ARCHETYPES
-# -----------------------------------------------------------------------------
+# =============================================================================
+# CANONICAL DATASETS & INITIAL ARCHETYPES
+# =============================================================================
 def get_canonical_30_items():
     specs = [
         ("Regular Slotted Carton", "5-ply, 18x12x10\", 180 GSM Kraft", 4000, "pcs", "Bhiwandi Warehouse"),
@@ -385,9 +513,9 @@ def get_questionnaire_master_dataset():
     }
     return pd.DataFrame(data)
 
-# -----------------------------------------------------------------------------
-# 6. PERSISTENT WORKFLOW STATE & DATA SYNCHRONIZATION ENGINE
-# -----------------------------------------------------------------------------
+# =============================================================================
+# PERSISTENT WORKFLOW STATE & DATA SYNCHRONIZATION ENGINE
+# =============================================================================
 if "stage" not in st.session_state:
     st.session_state.stage = "Create RFQ"
 
@@ -494,9 +622,9 @@ def sync_rfq_to_master_matrix():
 
 sync_rfq_to_master_matrix()
 
-# -----------------------------------------------------------------------------
-# 7. DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE (Point #9 Verification)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# DYNAMIC RULE-BASED QUALIFICATION & SPEND ENGINE
+# =============================================================================
 def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, is_demo_mode):
     is_baseline_valid = rfq_matches_demo_baseline()
     current_rfq_fp = st.session_state.rfq_data.get("rfq_fingerprint", "")
@@ -547,7 +675,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     exception_line_numbers = set()
     dynamic_issue_descriptions = []
 
-    # Point #9 FIX: Check if uploaded supplier quotes predated current RFQ requirements
     for sname in uploaded_suppliers_set:
         quote_fp = st.session_state.supplier_quote_fingerprints.get(sname, "")
         if quote_fp and quote_fp != current_rfq_fp:
@@ -564,7 +691,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             
         is_stale = sname in stale_quote_suppliers
         
-        # If supplier quote is STALE, treat its values as unavailable for sourcing calculations
         if is_stale:
             usable_rows = pd.DataFrame()
             lines_quoted = 0
@@ -630,7 +756,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         if v["qualified"] and v["is_complete"] and not v["is_stale"]
     }
     
-    # Point #35 FIX: Terminology standard -> Lowest Complete Qualified Quote
     if qualified_complete:
         best_single_name = min(qualified_complete, key=qualified_complete.get)
         best_single_spend = qualified_complete[best_single_name]
@@ -705,78 +830,97 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         "total_disqualified_suppliers": total_disqualified_suppliers
     }
 
-# -----------------------------------------------------------------------------
-# 8. FLAT INTEGRATED HEADER & SEQUENTIAL STEPPER (Point #31 Pending Extraction Navigation Guard)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# REFINED ENTERPRISE APP SHELL HEADER
+# =============================================================================
+status_badge_class = "badge-neutral"
+if st.session_state.rfq_status == "Published":
+    status_badge_class = "badge-confirmed"
+elif "Draft" in st.session_state.rfq_status:
+    status_badge_class = "badge-review"
+
 st.markdown(f"""
-<div class="flat-header">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
-        <div>
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <h2 style="margin: 0; font-size: 1.3rem; font-weight: 600; color: #0F172A;">{st.session_state.rfq_data['title']}</h2>
-                <span class="badge-status">{st.session_state.rfq_status}</span>
-            </div>
-            <div style="font-size: 0.82rem; color: #475569; margin-top: 4px;">
-                RFQ-2026-PKG-001 &nbsp;·&nbsp; {len(st.session_state.rfq_data['line_items'])} line items &nbsp;·&nbsp; Due {st.session_state.rfq_data['response_deadline']}
-            </div>
+<div class="aerchain-app-header">
+    <div class="aerchain-brand-row">
+        <div class="brand-mark">
+            <span style="color: {DESIGN_SYSTEM['colors']['accent_primary']}; font-size: 1.1rem;">❖</span> AERCHAIN &nbsp;·&nbsp; <span style="font-weight: 500; color: {DESIGN_SYSTEM['colors']['text_secondary']};">Procurement Intelligence Workspace</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <span class="badge-status">Sourcing Workspace</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge-base {status_badge_class}">{st.session_state.rfq_status}</span>
+            <span class="badge-base badge-neutral">{'Demo Mode' if st.session_state.demo_mode else 'Strict Live Mode'}</span>
+        </div>
+    </div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h1 style="margin: 0; font-size: 1.35rem; font-weight: 700; color: {DESIGN_SYSTEM['colors']['text_primary']}; letter-spacing: -0.01em;">
+                {st.session_state.rfq_data['title']}
+            </h1>
+            <div class="rfq-meta-line" style="margin-top: 6px;">
+                <span><strong>RFQ ID:</strong> RFQ-2026-PKG-001</span>
+                <span>•</span>
+                <span><strong>Scope:</strong> {len(st.session_state.rfq_data['line_items'])} Line Items</span>
+                <span>•</span>
+                <span><strong>Locations:</strong> {st.session_state.rfq_data['delivery_locations']}</span>
+                <span>•</span>
+                <span><strong>Deadline:</strong> {st.session_state.rfq_data['response_deadline']}</span>
+            </div>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Point #31 FIX: Explicit Pending Extraction Navigation Guard
+# Navigation Guard Notice
 if st.session_state.pending_extraction:
     pending_vendor = st.session_state.pending_extraction.get("supplier", "Vendor")
     st.warning(f"⚠️ **Pending Extraction Review:** Extracted quote data for **{pending_vendor}** has not yet been added to the comparison matrix. Please apply or discard the extracted quote below before proceeding.")
 
+# =============================================================================
+# REFINED WORKFLOW STEPPER BAR
+# =============================================================================
 stages = [
-    ("Create RFQ", "Requirements", True),
-    ("Supplier Responses", "Responses", st.session_state.responses_unlocked),
-    ("Compare Bids", "Compare", st.session_state.compare_unlocked and not st.session_state.pending_extraction),
-    ("Analyze & Decide", "Analyze", st.session_state.analyze_unlocked and not st.session_state.pending_extraction)
+    ("Create RFQ", "01 Requirements", True),
+    ("Supplier Responses", "02 Responses", st.session_state.responses_unlocked),
+    ("Compare Bids", "03 Compare", st.session_state.compare_unlocked and not st.session_state.pending_extraction),
+    ("Analyze & Decide", "04 Analyze", st.session_state.analyze_unlocked and not st.session_state.pending_extraction)
 ]
 cur_idx = [s[0] for s in stages].index(st.session_state.stage)
 
-st.markdown("<div class='stepper-flat-container'>", unsafe_allow_html=True)
+st.markdown("<div class='workflow-stepper-container'>", unsafe_allow_html=True)
 step_cols = st.columns(4)
 for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
     if idx < cur_idx:
-        btn_label = f"✓ {idx+1}. {stage_label}"
+        btn_label = f"✓ {stage_label}"
         b_type = "secondary"
     elif idx == cur_idx:
-        btn_label = f"● {idx+1}. {stage_label}"
+        btn_label = f"● {stage_label}"
         b_type = "primary"
     else:
-        btn_label = f"{idx+1}. {stage_label}"
+        btn_label = f"🔒 {stage_label}" if not is_unlocked else f"{stage_label}"
         b_type = "secondary"
         
     with step_cols[idx]:
-        if st.button(btn_label, key=f"seq_step_{idx}", type=b_type, disabled=not is_unlocked):
+        if st.button(btn_label, key=f"seq_step_{idx}", type=b_type, disabled=not is_unlocked, use_container_width=True):
             st.session_state.stage = stage_key
             st.rerun()
-        if not is_unlocked:
-            st.caption("Action required" if st.session_state.pending_extraction and idx > 1 else "Available in sequence")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# STAGE 1: CREATE RFQ
-# -----------------------------------------------------------------------------
+# =============================================================================
+# STAGE 1: REQUIREMENTS / CREATE RFQ
+# =============================================================================
 if st.session_state.stage == "Create RFQ":
-    st.markdown("### Create RFQ")
-    st.caption("What do you need to source? Describe the items, quantities, specifications, delivery locations and commercial requirements you know.")
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>RFQ Brief & Requirements</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Describe your sourcing scope, SKU quantities, commercial constraints and delivery specifications below.</div>", unsafe_allow_html=True)
 
     prompt_val = st.text_area(
-        "Requirements prompt:",
+        "Procurement Brief Prompt:",
         value="I need to source corrugated packaging boxes for our Bhiwandi and Hosur logistics operations. Require 30 line items across 5-ply heavy duty and 3-ply standard shipping cartons. ISO 9001 certification mandatory with Net 60 payment terms.",
-        height=90,
+        height=85,
         placeholder="Include quantities, specifications, delivery locations, timing and commercial terms if known..."
     )
     
     if st.button("Generate RFQ draft", type="primary"):
-        with st.spinner("Building RFQ draft · Extracting requirements · Structuring line items..."):
+        with st.spinner("Analyzing brief · Extracting specifications · Structuring 30 SKUs..."):
             sys_gen_prompt = """
             You are an expert enterprise procurement assistant.
             Analyze the user prompt and generate a structured RFx JSON proposal.
@@ -851,20 +995,35 @@ if st.session_state.stage == "Create RFQ":
                 st.warning("Reverted to standard canonical RFQ draft baseline.")
                 st.session_state.rfq_generated = True
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Structured Extracted Requirements Summary
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Structured Requirements Summary</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Key parameters extracted from procurement brief.</div>", unsafe_allow_html=True)
+    
+    s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+    with s_col1:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Category</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['category']}</div></div>", unsafe_allow_html=True)
+    with s_col2:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Delivery Destinations</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['delivery_locations']}</div></div>", unsafe_allow_html=True)
+    with s_col3:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Target Payment Terms</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['payment_terms']}</div></div>", unsafe_allow_html=True)
+    with s_col4:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Price Validity Benchmark</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['price_validity']}</div></div>", unsafe_allow_html=True)
     
     if st.session_state.rfq_data["unclear_specs"]:
-        st.markdown("#### Needs Your Review")
-        st.caption(f"{len(st.session_state.rfq_data['unclear_specs'])} items need confirmation. You can still publish and complete these later:")
-        
-        rev_cols = st.columns(min(len(st.session_state.rfq_data["unclear_specs"]), 3))
-        for idx, spec_item in enumerate(st.session_state.rfq_data["unclear_specs"]):
-            with rev_cols[idx % len(rev_cols)]:
-                st.warning(f"**Attention Item {idx+1}**\n\n{spec_item}")
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#B45309; margin-bottom:8px;'>NEEDS YOUR CONFIRMATION</div>", unsafe_allow_html=True)
+        for spec_item in st.session_state.rfq_data["unclear_specs"]:
+            st.markdown(f"<div style='font-size:0.82rem; color:#475569; padding:4px 0;'>• {spec_item}</div>", unsafe_allow_html=True)
+            
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown(f"#### Requirements · {len(st.session_state.rfq_data['line_items'])} line items")
-    st.caption("Origin: User provided · ✦ AI suggested — verify before publishing")
+    # Line Items Editor Section
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='section-header-title'>Line Items ({len(st.session_state.rfq_data['line_items'])} SKUs)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Review and edit quantities, UOMs, specifications and target delivery locations before publishing.</div>", unsafe_allow_html=True)
     
     items_df = pd.DataFrame(st.session_state.rfq_data["line_items"])
     
@@ -894,34 +1053,37 @@ if st.session_state.stage == "Create RFQ":
     sync_rfq_to_master_matrix()
     invalidate_analysis_snapshot()
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
     f1, f2, f3 = st.columns([2, 1, 1])
     with f2:
-        if st.button("Save draft", type="secondary"):
+        if st.button("Save draft", type="secondary", use_container_width=True):
             st.session_state.rfq_status = "Draft saved"
             st.success("Draft saved successfully.")
     with f3:
-        if st.button("Publish RFQ", type="primary", disabled=has_invalid_qty):
+        if st.button("Publish RFQ →", type="primary", disabled=has_invalid_qty, use_container_width=True):
             st.session_state.rfq_status = "Published"
             st.session_state.responses_unlocked = True
             st.session_state.stage = "Supplier Responses"
             st.rerun()
 
-# -----------------------------------------------------------------------------
-# STAGE 2: SUPPLIER RESPONSES (Points #4 & #5 Strict Currency/Basis Fix)
-# -----------------------------------------------------------------------------
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# =============================================================================
+# STAGE 2: SUPPLIER RESPONSES & EXTRACTION
+# =============================================================================
 elif st.session_state.stage == "Supplier Responses":
-    st.markdown("### Supplier responses")
-    st.caption("Track supplier submissions, extract quote data and review exceptions before adding them to the comparison.")
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Supplier Response Management</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Track supplier response status, extract quotation line items, and review verification exceptions.</div>", unsafe_allow_html=True)
 
     demo_c1, demo_c2 = st.columns([3, 1])
     with demo_c1:
         if st.session_state.demo_mode:
-            st.info("💡 **Demo Mode ON:** Preloaded baseline quotes are included for demonstration. Uploaded supplier values replace baseline values for validated lines.")
+            st.info("💡 **Demo Mode Active:** Preloaded baseline quotes are included for demonstration. Uploaded supplier responses replace baseline values for validated lines.")
         else:
-            st.success("🔒 **Strict Live Mode:** Only uploaded supplier quotes participate in comparison and scenario calculations.")
+            st.success("🔒 **Strict Live Mode:** Displaying uploaded supplier responses only.")
     with demo_c2:
-        new_demo_mode = st.toggle("Demo Mode — Include baseline supplier data", value=st.session_state.demo_mode)
+        new_demo_mode = st.toggle("Include demo baseline data", value=st.session_state.demo_mode)
         if new_demo_mode != st.session_state.demo_mode:
             st.session_state.demo_mode = new_demo_mode
             invalidate_analysis_snapshot()
@@ -939,18 +1101,20 @@ elif st.session_state.stage == "Supplier Responses":
 
     responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     s1, s2, s3, s4 = st.columns(4)
-    if st.session_state.demo_mode:
-        s1.metric("Uploaded Responses", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-        s2.metric("Demo Baseline Quotes", f"5 / 5")
-    else:
-        s1.metric("Uploaded Responses", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-        s2.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])} / {len(calc['active_suppliers'])}")
-    s3.metric("Qualified Suppliers", f"{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}")
-    s4.metric("Exception Lines", f"{calc['total_line_exceptions']} items")
+    with s1:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Uploaded Responses</div><div class='kpi-value'>{responses_rcvd_count} / {len(SUPPLIERS)}</div><div class='kpi-subtext'>Supplier submissions</div></div>", unsafe_allow_html=True)
+    with s2:
+        if st.session_state.demo_mode:
+            st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Demo Baseline Quotes</div><div class='kpi-value'>5 / 5</div><div class='kpi-subtext'>Preloaded baselines</div></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])} / {len(calc['active_suppliers'])}</div><div class='kpi-subtext'>100% coverage</div></div>", unsafe_allow_html=True)
+    with s3:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Suppliers</div><div class='kpi-value'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='kpi-subtext'>Passed compliance</div></div>", unsafe_allow_html=True)
+    with s4:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{calc['total_line_exceptions']}</div><div class='kpi-subtext'>Require verification</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-
-    st.markdown("#### Supplier Response Status")
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Supplier Response Status Inbox</div>", unsafe_allow_html=True)
     
     inbox_rows = []
     for sname in SUPPLIERS:
@@ -978,30 +1142,30 @@ elif st.session_state.stage == "Supplier Responses":
         })
         
     st.dataframe(pd.DataFrame(inbox_rows), use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-    
-    st.markdown("<div class='workspace-section'>", unsafe_allow_html=True)
-    st.markdown("#### Add Supplier Quote")
-    st.caption("Upload supplier response file and select target vendor.")
+    # Document Extraction Workspace Section
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Add Supplier Quotation Document</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Upload quotation files to automatically extract and normalize line item prices into the comparison matrix.</div>", unsafe_allow_html=True)
     
     up_col1, up_col2 = st.columns([2.5, 1.5])
     with up_col1:
         uploaded_file = st.file_uploader(
-            "Drop supplier quotation here (PDF, XLSX, DOCX, JPG, PNG, TXT)",
+            "Drop supplier quotation document (PDF, XLSX, DOCX, JPG, PNG, TXT)",
             type=["pdf", "xlsx", "docx", "png", "jpg", "txt"],
             label_visibility="collapsed"
         )
     with up_col2:
-        supplier_target = st.selectbox("Select supplier:", SUPPLIERS)
-        if uploaded_file and st.button("Extract quote data", type="primary"):
+        supplier_target = st.selectbox("Target Supplier:", SUPPLIERS)
+        if uploaded_file and st.button("Extract quote data", type="primary", use_container_width=True):
             file_bytes = uploaded_file.read()
             file_hash = hashlib.sha256(file_bytes).hexdigest()
             
             if file_hash in st.session_state.processed_file_hashes:
                 st.warning("⚠ Duplicate file detected. This document has already been processed and applied.")
             else:
-                with st.spinner(f"Reading and normalizing quotation for {supplier_target}..."):
+                with st.spinner(f"Extracting and normalizing quotation line items for {supplier_target}..."):
                     try:
                         unified_schema_prompt = f"""
                         You are an expert procurement document parser. Extract line item prices for supplier '{supplier_target}' into JSON.
@@ -1062,7 +1226,6 @@ elif st.session_state.stage == "Supplier Responses":
                         st.error(f"Environment Error: {str(ve)}")
                     except Exception:
                         st.error("Could not parse quotation details. Please verify file formatting.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.pending_extraction:
         p_data = st.session_state.pending_extraction["parsed"]
@@ -1070,14 +1233,13 @@ elif st.session_state.stage == "Supplier Responses":
         has_mismatch = st.session_state.pending_extraction.get('has_mismatch', False)
         detected_vendor = st.session_state.pending_extraction.get('detected_vendor', '')
         
-        st.markdown("<div class='workspace-section'>", unsafe_allow_html=True)
-        st.markdown(f"#### Review Extracted Quote: **{sname}**")
-        st.caption(f"Source file: `{st.session_state.pending_extraction['file_name']}` &nbsp;·&nbsp; Complete audit representation")
+        st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:1.0rem; font-weight:600; color:#0F172A;'>Review Extracted Quote: {sname}</div>", unsafe_allow_html=True)
+        st.caption(f"Source Document: `{st.session_state.pending_extraction['file_name']}` &nbsp;·&nbsp; Auditable AI Extraction Workspace")
         
-        # Point #7 FIX: Prominent Supplier Mismatch Exception Panel
         confirm_override = True
         if has_mismatch:
-            st.warning(f"⚠ **Supplier Identity Confirmation Required:** Selected vendor is **{sname}**, but document header indicates **'{detected_vendor}'**.")
+            st.warning(f"⚠ **Supplier Identity Mismatch:** Selected target vendor is **{sname}**, but document header indicates **'{detected_vendor}'**.")
             confirm_override = st.checkbox(f"☑ I confirm this document belongs to **{sname}**", value=False)
 
         valid_rfq_map = {it["Line #"]: it for it in st.session_state.rfq_data["line_items"]}
@@ -1132,7 +1294,6 @@ elif st.session_state.stage == "Supplier Responses":
                 seen_lines.add(lnum)
                 matched_count += 1
                 
-                # Points #4 & #5 FIX: Strict NULL handling for unsupported currency or invalid basis
                 if not is_known_currency:
                     norm_price = None
                     status_str = "REVIEW REQUIRED"
@@ -1187,7 +1348,7 @@ elif st.session_state.stage == "Supplier Responses":
         rev_col1, rev_col2 = st.columns([1.5, 1])
         with rev_col1:
             apply_btn_label = f"Add {matched_count} extracted values to comparison"
-            if st.button(apply_btn_label, type="primary", disabled=(matched_count == 0 or not confirm_override)):
+            if st.button(apply_btn_label, type="primary", disabled=(matched_count == 0 or not confirm_override), use_container_width=True):
                 meta = SUPPLIER_MAP[sname]
                 norm_col = meta["norm_col"]
                 orig_col = meta["orig_col"]
@@ -1222,14 +1383,14 @@ elif st.session_state.stage == "Supplier Responses":
                 invalidate_analysis_snapshot()
                 st.success(f"✓ Added {matched_count} extracted values for {sname} to comparison matrix ({validated_count} validated · {needs_review_count} require review).")
                 st.rerun()
-            st.caption(f"Status breakdown: **{validated_count} validated** · **{needs_review_count} require review**")
         with rev_col2:
-            if st.button("Discard extraction", type="secondary"):
+            if st.button("Discard extraction", type="secondary", use_container_width=True):
                 st.session_state.pending_extraction = None
                 st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
     b1, b2 = st.columns([1, 1])
     with b1:
         if st.button("← Back to Requirements", type="secondary"):
@@ -1241,21 +1402,22 @@ elif st.session_state.stage == "Supplier Responses":
             st.session_state.stage = "Compare Bids"
             st.rerun()
 
-# -----------------------------------------------------------------------------
-# STAGE 3: COMPARE QUOTES (Point #13 Disclaimer Fix)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# STAGE 3: COMPARE QUOTES & COMPLIANCE
+# =============================================================================
 elif st.session_state.stage == "Compare Bids":
-    st.markdown("### Compare quotes")
-    st.caption("Compare normalized prices, quote coverage and qualification status. Values marked Review Required or Stale are excluded from sourcing calculations.")
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Supplier Pricing & Qualification Matrix</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Compare normalized prices, quote coverage and qualification status. Values marked Review Required or Stale are excluded from sourcing calculations.</div>", unsafe_allow_html=True)
 
     demo_c1, demo_c2 = st.columns([3, 1])
     with demo_c1:
         if st.session_state.demo_mode:
-            st.info("💡 **Demo Mode ON:** Preloaded baseline quotes are included for demonstration. Uploaded supplier values replace baseline values for validated lines.")
+            st.info("💡 **Demo Mode Active:** Preloaded baseline quotes are included for demonstration. Uploaded supplier responses replace baseline values for validated lines.")
         else:
-            st.success("🔒 **Strict Live Mode:** Displaying only uploaded supplier responses.")
+            st.success("🔒 **Strict Live Mode:** Displaying uploaded supplier responses only.")
     with demo_c2:
-        new_demo_mode = st.toggle("Demo Mode — Include baseline supplier data", value=st.session_state.demo_mode)
+        new_demo_mode = st.toggle("Include demo baseline data", value=st.session_state.demo_mode)
         if new_demo_mode != st.session_state.demo_mode:
             st.session_state.demo_mode = new_demo_mode
             invalidate_analysis_snapshot()
@@ -1273,16 +1435,20 @@ elif st.session_state.stage == "Compare Bids":
 
     responses_rcvd_count = len(st.session_state.uploaded_suppliers)
     c1, c2, c3, c4 = st.columns(4)
-    if st.session_state.demo_mode:
-        c1.metric("Uploaded Responses", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-        c2.metric("Demo Baseline Quotes", f"5 / 5")
-    else:
-        c1.metric("Uploaded Responses", f"{responses_rcvd_count} / {len(SUPPLIERS)}")
-        c2.metric("Complete Quotes", f"{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}")
-    c3.metric("Qualified Vendors", f"{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}")
-    c4.metric("Exception Lines", f"{calc['total_line_exceptions']}")
+    with c1:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Uploaded Responses</div><div class='kpi-value'>{responses_rcvd_count} / {len(SUPPLIERS)}</div><div class='kpi-subtext'>Supplier submissions</div></div>", unsafe_allow_html=True)
+    with c2:
+        if st.session_state.demo_mode:
+            st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Demo Baseline Quotes</div><div class='kpi-value'>5 / 5</div><div class='kpi-subtext'>Preloaded baselines</div></div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='kpi-subtext'>100% coverage</div></div>", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Vendors</div><div class='kpi-value'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='kpi-subtext'>Passed compliance</div></div>", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{calc['total_line_exceptions']}</div><div class='kpi-subtext'>Require verification</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Supplier Portfolio Summary</div>", unsafe_allow_html=True)
 
     summary_rows = []
     for sname in calc["active_suppliers"]:
@@ -1307,20 +1473,22 @@ elif st.session_state.stage == "Compare Bids":
         
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-    
     if calc["dynamic_issue_descriptions"]:
         with st.expander(f"Issues requiring attention · {calc['total_line_exceptions']} lines affected"):
             for issue_desc in calc["dynamic_issue_descriptions"]:
                 st.markdown(f"* {issue_desc}")
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Matrix Section
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
     tab_comp1, tab_comp2 = st.tabs(["Price comparison matrix", "Qualification checks"])
     
     with tab_comp1:
         m_col1, m_col2 = st.columns([2, 1])
         with m_col1:
             st.session_state.exception_filter = st.selectbox(
-                "Filter matrix:",
+                "Filter matrix view:",
                 ["All line items", "Quoted lines with exceptions"]
             )
         with m_col2:
@@ -1383,9 +1551,8 @@ elif st.session_state.stage == "Compare Bids":
         styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
         st.dataframe(styled_matrix, use_container_width=True, height=440, hide_index=True)
         
-        # Point #13 FIX: Clarified Legend Disclaimer
         st.markdown("""
-        <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 6px;">
             <strong>Legend:</strong> &nbsp;
             <span style="background-color: #F0FDF4; color: #166534; padding: 2px 6px; border-radius: 4px; border: 1px solid #BBF7D0;">Lowest usable qualified price — price comparison only, not an award recommendation</span> &nbsp;
             <span style="background-color: #FFFBEB; color: #B45309; padding: 2px 6px; border-radius: 4px; border: 1px solid #FEF08A;">Review required (excluded from sourcing)</span> &nbsp;
@@ -1395,7 +1562,7 @@ elif st.session_state.stage == "Compare Bids":
         st.caption("Normalization: USD → INR at ₹83.50/USD · Quoted prices normalized to requested UOM. Review required values are displayed for visibility but excluded from sourcing calculations.")
 
     with tab_comp2:
-        st.markdown("#### Qualification Checks Evaluation")
+        st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:4px;'>Qualification Checks Evaluation</div>", unsafe_allow_html=True)
         st.caption("Mandatory Criteria: ISO 9001 certification required AND 3-year reported defect rate < 0.5%")
         
         qual_summary = []
@@ -1404,13 +1571,15 @@ elif st.session_state.stage == "Compare Bids":
             qual_summary.append({
                 "Supplier": sname,
                 "ISO 9001": q_info["iso"],
-                "Defect Rate": q_info["defect"],
+                "3-Year Defect Rate": q_info["defect"],
                 "Qualification": "Qualified" if q_info["qualified"] else "Disqualified",
-                "Reason / Notes": q_info["reason"]
+                "Reason / Evaluation": q_info["reason"]
             })
         st.dataframe(pd.DataFrame(qual_summary), use_container_width=True, hide_index=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
     cb1, cb2 = st.columns([1, 1])
     with cb1:
         if st.button("← Back to Responses", type="secondary"):
@@ -1422,12 +1591,13 @@ elif st.session_state.stage == "Compare Bids":
             st.session_state.stage = "Analyze & Decide"
             st.rerun()
 
-# -----------------------------------------------------------------------------
-# STAGE 4: SCENARIO ANALYSIS (Points #20 & #22 Terminology Fixes)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# STAGE 4: SCENARIO ANALYSIS & EXECUTIVE BRIEFING
+# =============================================================================
 elif st.session_state.stage == "Analyze & Decide":
-    st.markdown("### Scenario analysis")
-    st.caption("Evaluate sourcing scenarios using available supplier quote data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.")
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Sourcing Scenario Analysis</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Evaluate sourcing scenarios using available supplier quote data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.</div>", unsafe_allow_html=True)
 
     calc = calculate_deterministic_spend_engine(
         st.session_state.master_matrix,
@@ -1444,14 +1614,14 @@ elif st.session_state.stage == "Analyze & Decide":
         if is_stale:
             st.warning("⚠️ **Dataset Modified Since Last Analysis:** RFQ requirements or supplier quote availability have changed since this analysis was generated. Click 'Run analysis' below to refresh results.")
 
-    st.markdown("#### Common analyses")
+    st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#475569; margin-bottom:8px;'>SUGGESTED ANALYSIS ACTIONS</div>", unsafe_allow_html=True)
     q_col1, q_col2, q_col3 = st.columns(3)
     prompt_choice = None
-    if q_col1.button("Lowest qualified split", type="secondary"):
+    if q_col1.button("Lowest qualified split", type="secondary", use_container_width=True):
         prompt_choice = "What happens if we split the award across qualified suppliers based on lowest unit price?"
-    if q_col2.button("Supplier eligibility", type="secondary"):
+    if q_col2.button("Supplier eligibility", type="secondary", use_container_width=True):
         prompt_choice = "Why are certain suppliers excluded from full award scenarios?"
-    if q_col3.button("Landed-cost gaps", type="secondary"):
+    if q_col3.button("Landed-cost gaps", type="secondary", use_container_width=True):
         prompt_choice = "What data is missing to calculate landed cost?"
 
     user_query = st.text_input(
@@ -1529,6 +1699,8 @@ elif st.session_state.stage == "Analyze & Decide":
                 except Exception:
                     st.error("Scenario evaluation failed. Please refine query.")
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
     if st.session_state.last_analysis_result:
         parsed_ans = st.session_state.last_analysis_result
         active_query = st.session_state.last_analysis_query
@@ -1551,53 +1723,36 @@ elif st.session_state.stage == "Analyze & Decide":
         
         calc_provenance_str = "baseline + submitted supplier data · Demo Mode" if ctx["demo_mode"] else "submitted supplier data only · Strict Live Mode"
         
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-        st.markdown("#### Analysis Result")
-        st.markdown(f"### {parsed_ans.get('headline_answer', '')}")
-        st.caption(f"Analysis generated: **{ctx.get('timestamp', 'Recent')}** · Dataset: {calc_provenance_str} · {ctx['active_count']} active suppliers · {ctx['line_count']} RFQ lines · Price-only basis")
+        st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Executive Briefing</div>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='margin: 8px 0 16px 0; font-size: 1.25rem; font-weight: 600; color: #0F172A;'>{parsed_ans.get('headline_answer', '')}</h2>", unsafe_allow_html=True)
+        st.caption(f"Generated: **{ctx.get('timestamp', 'Recent')}** · Dataset: {calc_provenance_str} · {ctx['active_count']} active suppliers · {ctx['line_count']} RFQ lines · Price-only basis")
         
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
         q_lower = active_query.lower()
 
         if "landed" in q_lower or "gst" in q_lower or "freight" in q_lower:
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>GST Rates</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>GST Rates</div><div class='kpi-value'>Missing</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Missing</div><div class='metric-card-lbl'>Freight Costs</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Freight Costs</div><div class='kpi-value'>Missing</div></div>", unsafe_allow_html=True)
             with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['active_count']} Vendors</div><div class='metric-card-lbl'>Suppliers Affected</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Suppliers Affected</div><div class='kpi-value'>{ctx['active_count']} Vendors</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Unavailable</div><div class='metric-card-lbl'>Landed Basis</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Landed Basis</div><div class='kpi-value'>Unavailable</div></div>", unsafe_allow_html=True)
                 
         elif "eligib" in q_lower or "exclude" in q_lower or "qualif" in q_lower:
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['qual_count']} / {ctx['active_count']}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Vendors</div><div class='kpi-value'>{ctx['qual_count']} / {ctx['active_count']}</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['disqual_count']}</div><div class='metric-card-lbl'>Disqualified Vendors</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Disqualified Vendors</div><div class='kpi-value'>{ctx['disqual_count']}</div></div>", unsafe_allow_html=True)
             with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Complete Quotes</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['exception_lines']}</div><div class='metric-card-lbl'>Exception Lines</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{ctx['exception_lines']}</div></div>", unsafe_allow_html=True)
                 
-        elif "payment" in q_lower or "term" in q_lower:
-            terms_series = st.session_state.questionnaire_matrix.loc[
-                st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Offered Payment Terms",
-                calc["active_suppliers"]
-            ].iloc[0]
-            term_counts = terms_series.value_counts().to_dict()
-            
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 60', 0)} Vendors</div><div class='metric-card-lbl'>Net 60 Terms</div></div>", unsafe_allow_html=True)
-            with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 30', 0)} Vendors</div><div class='metric-card-lbl'>Net 30 Terms</div></div>", unsafe_allow_html=True)
-            with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{term_counts.get('Net 45', 0)} Vendors</div><div class='metric-card-lbl'>Net 45 Terms</div></div>", unsafe_allow_html=True)
-            with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Net 60</div><div class='metric-card-lbl'>RFQ Benchmark</div></div>", unsafe_allow_html=True)
-
         elif "capacity" in q_lower or "volume" in q_lower:
             rfq_uoms = set(it["UOM"] for it in st.session_state.rfq_data["line_items"])
             if len(rfq_uoms) == 1:
@@ -1607,16 +1762,15 @@ elif st.session_state.stage == "Analyze & Decide":
             else:
                 vol_metric_val = f"Mixed UOMs ({len(st.session_state.rfq_data['line_items'])} lines)"
 
-            # Point #20 FIX: Decision-useful capacity metrics
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{vol_metric_val}</div><div class='metric-card-lbl'>Required RFQ Volume</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Required RFQ Volume</div><div class='kpi-value'>{vol_metric_val}</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['active_count']} / {ctx['active_count']}</div><div class='metric-card-lbl'>Reporting Vendors</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Reporting Vendors</div><div class='kpi-value'>{ctx['active_count']} / {ctx['active_count']}</div></div>", unsafe_allow_html=True)
             with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Monthly</div><div class='metric-card-lbl'>Capacity Basis</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Capacity Basis</div><div class='kpi-value'>Monthly</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>Inconclusive</div><div class='metric-card-lbl'>Assessment Status</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Assessment Status</div><div class='kpi-value'>Inconclusive</div></div>", unsafe_allow_html=True)
             st.caption("ℹ Supplier capacity is reported monthly. RFQ fulfillment period is not specified, so capacity sufficiency cannot be conclusively determined.")
 
         elif "split" in q_lower or "cheapest" in q_lower or "award" in q_lower or "lowest" in q_lower:
@@ -1625,15 +1779,14 @@ elif st.session_state.stage == "Analyze & Decide":
             spend_label = f"₹{ctx['split_spend']:,.0f}" if ctx['unassigned_count'] == 0 else f"Partial: ₹{ctx['split_spend']:,.0f}"
             delta_label = f"₹{abs(ctx['price_diff']):,.0f} {'lower' if ctx['price_diff'] >= 0 else 'higher'}" if ctx['unassigned_count'] == 0 else "Unavailable"
             
-            # Point #22 FIX: "Illustrative Split Spend" metric label
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{spend_label}</div><div class='metric-card-lbl'>Illustrative Split Spend ({assigned_lines_count}/{ctx['line_count']} lines)</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Illustrative Split Spend</div><div class='kpi-value'>{spend_label}</div><div class='kpi-subtext'>{assigned_lines_count}/{ctx['line_count']} lines assigned</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{delta_label}</div><div class='metric-card-lbl'>Delta vs Complete Qualified</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Delta vs Complete Qualified</div><div class='kpi-value'>{delta_label}</div></div>", unsafe_allow_html=True)
             with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['qual_count']} / {ctx['active_count']}</div><div class='metric-card-lbl'>Qualified Vendors</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Vendors</div><div class='kpi-value'>{ctx['qual_count']} / {ctx['active_count']}</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['unassigned_count']}</div><div class='metric-card-lbl'>Unassigned Lines</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Unassigned Lines</div><div class='kpi-value'>{ctx['unassigned_count']}</div></div>", unsafe_allow_html=True)
             
             if ctx['unassigned_count'] > 0:
                 st.caption("⚠ **Note:** Price delta is unavailable because 1 or more line items have no usable qualified quote and are excluded from the illustrative split calculation.")
@@ -1641,51 +1794,56 @@ elif st.session_state.stage == "Analyze & Decide":
         else:
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['active_count']} / {len(SUPPLIERS)}</div><div class='metric-card-lbl'>Active Suppliers</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Active Suppliers</div><div class='kpi-value'>{ctx['active_count']} / {len(SUPPLIERS)}</div></div>", unsafe_allow_html=True)
             with m2:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='metric-card-lbl'>Complete Quotes</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div></div>", unsafe_allow_html=True)
             with m3:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['qual_count']}</div><div class='metric-card-lbl'>Qualified Suppliers</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Suppliers</div><div class='kpi-value'>{ctx['qual_count']}</div></div>", unsafe_allow_html=True)
             with m4:
-                st.markdown(f"<div class='metric-card'><div class='metric-card-val'>{ctx['exception_lines']}</div><div class='metric-card-lbl'>Exception Lines</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{ctx['exception_lines']}</div></div>", unsafe_allow_html=True)
         
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             if parsed_ans.get("key_drivers"):
-                st.markdown("**Key drivers**")
+                st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>KEY DRIVERS</div>", unsafe_allow_html=True)
                 for kd in parsed_ans["key_drivers"]:
-                    st.markdown(f"* {kd}")
+                    st.markdown(f"<div class='decision-list-item'>• {kd}</div>", unsafe_allow_html=True)
         with c2:
             if parsed_ans.get("trade_offs"):
-                st.markdown("**Trade-offs & Considerations**")
+                st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>TRADE-OFFS & CONSIDERATIONS</div>", unsafe_allow_html=True)
                 for to in parsed_ans["trade_offs"]:
-                    st.markdown(f"* {to}")
+                    st.markdown(f"<div class='decision-list-item'>• {to}</div>", unsafe_allow_html=True)
                     
         if parsed_ans.get("data_gaps"):
-            st.markdown("**Data Gaps Identified**")
+            st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#475569; margin:16px 0 8px 0;'>DATA GAPS IDENTIFIED</div>", unsafe_allow_html=True)
             for dg in parsed_ans["data_gaps"]:
-                st.markdown(f"* <span class='badge-datagap'>Data Gap</span> {dg}", unsafe_allow_html=True)
+                st.markdown(f"<div class='decision-list-item'><span class='badge-base badge-neutral'>Data Gap</span> {dg}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-        st.markdown("#### Decision Basis")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Decision Basis Panel Section
+        st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Decision Basis & Methodology</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-subtitle'>Explicit boundaries of calculated figures and current data gaps.</div>", unsafe_allow_html=True)
+        
         db_c1, db_c2 = st.columns(2)
         with db_c1:
-            st.markdown("**Included in Spend Calculations:**")
-            st.markdown("* Normalized unit prices (INR / requested UOM)")
-            st.markdown("* Requested RFQ quantities")
-            st.markdown("* Supplier qualification status (ISO 9001 + Defect rate)")
-            st.markdown("* Quote completeness & usable lines")
+            st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#166534; margin-bottom:8px;'>INCLUDED IN CALCULATIONS</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>✓ Normalized unit prices (INR / requested UOM)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>✓ Requested RFQ quantities</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>✓ Supplier qualification status (ISO 9001 + Defect rate)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>✓ Quote completeness & usable lines</div>", unsafe_allow_html=True)
         with db_c2:
-            st.markdown("**Excluded from Spend Calculations (Missing Data):**")
-            st.markdown("* GST rates & numerical tax amounts")
-            st.markdown("* Freight cost amounts (DDP vs Buyer Collect)")
-            st.markdown("* Lead time & delivery schedule buffer")
-            st.markdown("* Production capacity sufficiency over fulfillment period")
+            st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#991B1B; margin-bottom:8px;'>EXCLUDED (DATA GAPS)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>— GST rates & numerical tax amounts</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>— Freight cost amounts (DDP vs Buyer Collect)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>— Lead time & delivery schedule buffer</div>", unsafe_allow_html=True)
+            st.markdown("<div class='decision-list-item'>— Production capacity sufficiency over fulfillment period</div>", unsafe_allow_html=True)
 
         if "landed" in q_lower or "gst" in q_lower:
-            st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-            st.markdown("#### Landed Cost Data-Gap Analysis")
+            st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-title'>Landed Cost Data-Gap Matrix</div>", unsafe_allow_html=True)
             st.warning("Landed cost cannot be calculated due to missing numerical GST rate and freight cost inputs.")
             
             gap_rows = []
@@ -1706,8 +1864,8 @@ elif st.session_state.stage == "Analyze & Decide":
             st.dataframe(pd.DataFrame(gap_rows), use_container_width=True, hide_index=True)
 
         if "split" in q_lower or "cheapest" in q_lower:
-            st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-            st.markdown("#### Illustrative Price-Only Split")
+            st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-title'>Illustrative Price-Only Split Allocation</div>", unsafe_allow_html=True)
             st.caption("Spend distribution by supplier under lowest unit price allocation — not a final award recommendation. Supplier capacity, freight, lead time and commercial terms are excluded.")
             
             st.dataframe(calc["split_allocation"], use_container_width=True, height=260, hide_index=True)
@@ -1716,19 +1874,20 @@ elif st.session_state.stage == "Analyze & Decide":
                 calc["split_allocation"],
                 x="Awarded Supplier",
                 y="Extended Spend (INR)",
-                color_discrete_sequence=[PRIMARY_BLUE],
+                color_discrete_sequence=[DESIGN_SYSTEM["colors"]["accent_primary"]],
                 template="plotly_white",
                 title="Spend Distribution by Supplier"
             )
-            fig.update_layout(height=280, margin=dict(l=20, r=20, t=40, b=20))
+            fig.update_layout(height=260, margin=dict(l=20, r=20, t=30, b=20))
             st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-    st.caption("Calculation basis: Price-only comparison using quoted unit price × requested quantity. Excludes GST, freight cost amounts, lead time, capacity and other commercial factors.")
-    
-    st.markdown("<div class='section-spacing'></div>", unsafe_allow_html=True)
-    
-    # Point #26 FIX: Enriched Audit Export with RFQ Fingerprint & Quote Version Status
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Audit Trail Export Section
+    st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-title'>Audit Trail & Export</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header-subtitle'>Export full comparison matrix, provenance sources, transformation bases, and validation audit log.</div>", unsafe_allow_html=True)
+
     current_rfq_fp = st.session_state.rfq_data.get("rfq_fingerprint", "N/A")
     audit_export_rows = []
     
@@ -1767,3 +1926,4 @@ elif st.session_state.stage == "Analyze & Decide":
             
     audit_csv_data = pd.DataFrame(audit_export_rows).to_csv(index=False).encode('utf-8')
     st.download_button("Download comparison & audit trail CSV", audit_csv_data, "RFQ_Audit_Master_Matrix.csv", "text/csv", type="secondary")
+    st.markdown("</div>", unsafe_allow_html=True)
