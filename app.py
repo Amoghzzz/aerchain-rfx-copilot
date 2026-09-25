@@ -6,110 +6,134 @@ from google.oauth2 import service_account
 from google.genai import types
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIG & HIGH-CONTRAST CSS
+# 1. PAGE CONFIGURATION & CLEAN SAAS STYLING
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Aerchain | RFx Quote Assistant",
+    page_title="Aerchain | RFx Smart Quote Assistant",
     page_icon="📦",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # Hide left sidebar completely
 )
 
-# Custom CSS focused on contrast, readability, and clean UI
+# Clean, High-Contrast Modern Theme CSS
 st.markdown("""
     <style>
-    /* Dark Theme Base */
+    /* Force main background */
     .stApp {
         background-color: #0f172a;
         color: #f8fafc;
     }
     
-    /* Fix Unreadable Tabs */
+    /* Hide Sidebar Completely */
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    
+    /* Top Header Summary Card */
+    .top-header-card {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px 24px;
+        margin-bottom: 24px;
+    }
+    
+    /* Fix Button Styling (Ensures black/dark text on light buttons) */
+    .stButton>button {
+        background-color: #38bdf8 !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        border-radius: 6px !important;
+        border: none !important;
+        padding: 10px 16px !important;
+        width: 100%;
+    }
+    .stButton>button:hover {
+        background-color: #7dd3fc !important;
+        color: #0f172a !important;
+    }
+
+    /* Tab Header Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 12px;
         background-color: #0f172a;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 45px;
+        height: 48px;
         background-color: #1e293b !important;
-        border-radius: 6px 6px 0px 0px;
-        color: #cbd5e1 !important;  /* High contrast light gray text for unselected tabs */
-        padding: 8px 18px;
-        font-weight: 500;
+        border-radius: 8px;
+        color: #94a3b8 !important; /* Visible light gray text for inactive tabs */
+        padding: 10px 24px;
+        font-weight: 600;
+        border: 1px solid #334155;
     }
     .stTabs [aria-selected="true"] {
         background-color: #0284c7 !important; /* Active tab blue */
         color: #ffffff !important;
         font-weight: 700;
+        border: 1px solid #38bdf8;
     }
     
-    /* Custom Info Cards */
-    .info-card {
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 12px;
-    }
-    .info-card h4 {
-        color: #38bdf8;
-        margin-top: 0;
-    }
-    
-    /* Status Badges */
-    .badge-warn {
+    /* Alert Cards */
+    .card-warn {
         background-color: #451a03;
-        color: #fcd34d;
-        border: 1px solid #78350f;
-        padding: 6px 12px;
-        border-radius: 6px;
-        font-size: 0.85rem;
+        color: #fef08a;
+        border: 1px solid #854d0e;
+        padding: 12px 16px;
+        border-radius: 8px;
         font-weight: 600;
+        font-size: 0.9rem;
     }
-    .badge-info {
+    .card-info {
         background-color: #0c4a6e;
-        color: #7dd3fc;
-        border: 1px solid #0369a1;
-        padding: 6px 12px;
-        border-radius: 6px;
-        font-size: 0.85rem;
+        color: #bae6fd;
+        border: 1px solid #0284c7;
+        padding: 12px 16px;
+        border-radius: 8px;
         font-weight: 600;
+        font-size: 0.9rem;
     }
-    .badge-danger {
+    .card-danger {
         background-color: #450a0a;
-        color: #fca5a5;
-        border: 1px solid #7f1d1d;
-        padding: 6px 12px;
-        border-radius: 6px;
-        font-size: 0.85rem;
+        color: #fecdd3;
+        border: 1px solid #9f1239;
+        padding: 12px 16px;
+        border-radius: 8px;
         font-weight: 600;
+        font-size: 0.9rem;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. SIDEBAR
+# 2. TOP EXECUTIVE HEADER (REPLACES SIDEBAR)
 # -----------------------------------------------------------------------------
-with st.sidebar:
-    st.title("📦 Aerchain Procurement")
-    st.caption("Active Project: **Packaging Sourcing 2026**")
-    st.divider()
-    
-    st.markdown("### System Status")
-    st.success("🟢 AI Parser: Ready")
-    st.info("⚡ Currency Normaliser: Active")
-    
-    st.divider()
-    st.markdown("### Procurement Details")
-    st.markdown("""
-    * **Category:** Packaging Materials
-    * **Total Items:** 30 Line Items
-    * **Total Vendors:** 5 Invited
-    """)
+st.title("📦 Aerchain RFx Smart Quote Assistant")
+st.caption("Automated vendor quote standardisation, anomaly detection, and decision interrogation.")
 
-# Main Header
-st.title("RFx Smart Quote Assistant")
-st.caption("Automatically standardise vendor quotes, detect pricing anomalies, and compare proposals using AI.")
+# Full-width Context Bar
+st.markdown("""
+<div class="top-header-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Sourcing Event</span><br>
+            <strong style="font-size: 1.1rem; color: #f8fafc;">RFQ-2026-PKG: Corrugated Packaging</strong>
+        </div>
+        <div>
+            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Scope</span><br>
+            <strong style="font-size: 1.1rem; color: #38bdf8;">30 Line Items</strong>
+        </div>
+        <div>
+            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Bids Received</span><br>
+            <strong style="font-size: 1.1rem; color: #f8fafc;">5 Vendors Submitted</strong>
+        </div>
+        <div>
+            <span style="color: #94a3b8; font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">AI Extraction Engine</span><br>
+            <strong style="font-size: 1.1rem; color: #4ade80;">🟢 Gemini 2.5 Flash Active</strong>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # 3. VERTEX AI CLIENT INITIALIZATION
@@ -168,10 +192,10 @@ def get_vendor_mock_matrix():
     return base_df
 
 # -----------------------------------------------------------------------------
-# 5. TABBED INTERFACE WITH CLEAR UX COPY
+# 5. TABBED INTERFACE (HIGH CONTRAST & FULL WIDTH)
 # -----------------------------------------------------------------------------
 tab1, tab2, tab3 = st.tabs([
-    "1️⃣ RFx Setup & Items", 
+    "1️⃣ RFx Setup & Line Items", 
     "2️⃣ Vendor Comparison Table", 
     "3️⃣ AI Analysis & Award Decision"
 ])
@@ -180,62 +204,50 @@ tab1, tab2, tab3 = st.tabs([
 # TAB 1: RFX SETUP
 # -----------------------------------------------------------------------------
 with tab1:
-    st.subheader("RFx Scope: Corrugated Packaging")
+    st.subheader("RFx Baseline Requirements")
     
     col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown("**Master Requirement List (30 Line Items)**")
-        # Hide index for cleaner UI
         st.dataframe(get_rfx_baseline(), use_container_width=True, height=420, hide_index=True)
     
     with col2:
-        st.markdown("<div class='info-card'>", unsafe_allow_html=True)
-        st.markdown("#### Commercial Terms & Quality")
-        st.markdown("""
-        * **Target Payment Term:** Net 60 Days
-        * **Delivery Locations:** Central Warehouses
+        st.markdown("**Commercial Terms & Quality Standards**")
+        st.info("""
+        * **Target Payment Terms:** Net 60 Days
+        * **Delivery Location:** Central Warehouses (Bhiwandi / Hosur)
         * **Quality Certification:** ISO 9001 Mandatory
-        * **Defect Limit:** Maximum 0.5%
+        * **Defect Rate Limit:** Maximum 0.5%
         """)
-        st.markdown("</div>", unsafe_allow_html=True)
         
-        st.markdown("<div class='info-card'>", unsafe_allow_html=True)
-        st.markdown("#### Invited Vendors (5)")
-        st.markdown("""
-        1. **Apex Packaging** (Standard PDF)
-        2. **PackTech Solutions** (Unit conversion needed)
-        3. **BoxCraft Ltd** (Partial quote - 27 items)
-        4. **CorruSeal Global** (Quoted in USD)
-        5. **National Paper Mills** (Scanned rate sheet)
-        """)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("**Invited Suppliers (5):**")
+        st.write("1. Apex Packaging | 2. PackTech Solutions | 3. BoxCraft Ltd | 4. CorruSeal Global | 5. National Paper Mills")
 
 # -----------------------------------------------------------------------------
-# TAB 2: VENDOR COMPARISON
+# TAB 2: VENDOR COMPARISON MATRIX
 # -----------------------------------------------------------------------------
 with tab2:
-    st.subheader("Automated Vendor Quote Comparison")
+    st.subheader("Automated Quote Extraction & Normalisation")
     
-    # Upload Area
     uploaded_files = st.file_uploader(
-        "Upload vendor quote files (PDF, JPG, PNG, or TXT):",
+        "Upload incoming vendor quote files (PDF, JPG, PNG, or TXT):",
         accept_multiple_files=True,
         type=["pdf", "png", "jpg", "txt"]
     )
     if uploaded_files:
-        st.success(f"Received {len(uploaded_files)} file(s). Processing through AI parser...")
+        st.success(f"Received {len(uploaded_files)} file(s). Extraction complete.")
     
     st.divider()
     
-    # Visual Alert Badges (Simple & Clear)
+    # Anomaly Alert Cards
     st.markdown("**AI Detection Flags & Anomalies:**")
     b1, b2, b3 = st.columns(3)
-    b1.markdown("<div class='badge-warn'>⚠️ BoxCraft: Quoted only 27 of 30 items</div>", unsafe_allow_html=True)
-    b2.markdown("<div class='badge-info'>💱 CorruSeal: Converted from USD to INR (@ 83.5)</div>", unsafe_allow_html=True)
-    b3.markdown("<div class='badge-danger'>📏 PackTech: Standardised from 'per 100 pcs' to 'per pc'</div>", unsafe_allow_html=True)
+    b1.markdown("<div class='card-warn'>⚠️ BoxCraft: Quoted only 27 of 30 items (Partial Quote)</div>", unsafe_allow_html=True)
+    b2.markdown("<div class='card-info'>💱 CorruSeal: Converted from USD to INR (@ 83.5 exchange rate)</div>", unsafe_allow_html=True)
+    b3.markdown("<div class='card-danger'>📏 PackTech: Standardised from 'per 100 pcs' to 'per piece'</div>", unsafe_allow_html=True)
     
     st.write("")
-    st.markdown("**Comparison Matrix (Click any cell to edit prices manually):**")
+    st.markdown("**Side-by-Side Normalized Comparison (Click any cell to edit manually):**")
     
     raw_matrix = get_vendor_mock_matrix()
     edited_matrix = st.data_editor(
@@ -251,39 +263,38 @@ with tab2:
             st.markdown("**Extracted Email Snippet (BoxCraft):**")
             st.code("Attached pricing for items 1-27. For items 28-30, same as last year.", language="text")
         with c_b:
-            st.markdown("**AI Action:**")
-            st.write("Flagged items 28-30 as missing. Highlighted cells as empty for buyer review.")
+            st.markdown("**AI Extraction Log:**")
+            st.write("Flagged items 28-30 as missing. Cells left blank for buyer override.")
 
 # -----------------------------------------------------------------------------
 # TAB 3: AI ANALYSIS & AWARD
 # -----------------------------------------------------------------------------
 with tab3:
-    st.subheader("Interrogate Bids with AI")
-    st.markdown("Ask questions in plain language to generate split-award scenarios or savings reports.")
+    st.subheader("Interrogate Bids in Natural Language")
+    st.markdown("Select a quick query or type your own question to run scenario analyses across all vendor responses.")
     
-    # Simple Prompt Options
-    st.markdown("**Common Questions:**")
+    st.markdown("**Suggested CPO Queries:**")
     q1, q2, q3 = st.columns(3)
     
     prompt_choice = None
-    if q1.button("💡 Lowest cost per item (Split-Award)"):
+    if q1.button("💡 Lowest Cost per Item (Split-Award)"):
         prompt_choice = "Show a split-award decision picking the cheapest vendor for each line item. Calculate total cost and savings compared to single vendor."
-    if q2.button("⚠️ Check partial quote risks"):
+    if q2.button("⚠️ Check Partial Quote Risks"):
         prompt_choice = "Which vendors failed to quote all items, and what risk does that pose?"
-    if q3.button("📊 Recommended single vendor"):
+    if q3.button("📊 Recommended Single Vendor"):
         prompt_choice = "Which vendor is best if we must select only one supplier for all 30 items?"
 
-    user_query = st.text_input("Type your question here:", value=prompt_choice if prompt_choice else "")
+    user_query = st.text_input("Enter your question:", value=prompt_choice if prompt_choice else "", placeholder="e.g., Which vendor offers the best pricing for 5-ply boxes?")
     
     if user_query:
         with st.spinner("Analyzing vendor proposals..."):
             matrix_json = edited_matrix.to_json(orient="records")
             
             system_instruction = """
-            You are a procurement advisor helping a category buyer.
-            Analyze the 30-item vendor matrix and answer clearly in simple English.
-            Focus on total cost, savings, and risks (like missing quotes).
-            Use bullet points and bold text for key figures.
+            You are a chief procurement officer (CPO) assistant.
+            Analyze the 30-item vendor matrix and answer clearly in standard English.
+            Focus on total spend, calculated savings, and vendor risks.
+            Use clear markdown headers and bold numbers.
             """
             
             prompt = f"Data Matrix:\n{matrix_json}\n\nQuestion: {user_query}"
@@ -298,7 +309,7 @@ with tab3:
                     )
                 )
                 
-                st.markdown("### Recommendation Summary")
+                st.markdown("### AI Recommendation")
                 st.write(response.text)
                 
                 st.divider()
@@ -317,7 +328,6 @@ with tab3:
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Simple CSV Export
                 csv = edited_matrix.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Comparison Summary (CSV)",
