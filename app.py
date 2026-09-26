@@ -117,10 +117,9 @@ st.markdown(f"""
        2. APP SHELL & PRODUCT HEADER
        ------------------------------------------------------------------------ */
     .aerchain-app-header {{
-        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
-        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
-        border-radius: {DESIGN_SYSTEM['radius']['lg']};
-        padding: 16px 24px;
+        background-color: transparent;
+        border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        padding: 8px 0 16px 0;
         margin-bottom: 16px;
     }}
     
@@ -128,9 +127,8 @@ st.markdown(f"""
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
-        padding-bottom: 10px;
-        margin-bottom: 12px;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
     }}
     
     .brand-mark {{
@@ -156,22 +154,22 @@ st.markdown(f"""
        3. WORKFLOW STEPPER BAR
        ------------------------------------------------------------------------ */
     .workflow-stepper-container {{
-        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
-        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
-        border-radius: {DESIGN_SYSTEM['radius']['lg']};
-        padding: 8px 16px;
-        margin-bottom: 20px;
+        background-color: transparent;
+        padding: 0;
+        margin-bottom: 24px;
+        border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        padding-bottom: 16px;
     }}
 
     /* ------------------------------------------------------------------------
-       4. WORKSPACE SECTIONS & SURFACES
+       4. WORKSPACE SECTIONS & SURFACES (CLEANED - NO EMBEDDED BOXED OUTLINES)
        ------------------------------------------------------------------------ */
     .aerchain-section {{
-        background-color: {DESIGN_SYSTEM['colors']['surface_card']};
-        border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
-        border-radius: {DESIGN_SYSTEM['radius']['lg']};
-        padding: 24px;
-        margin-bottom: 20px;
+        background-color: transparent;
+        border: none;
+        border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
+        padding-bottom: 20px;
+        margin-bottom: 24px;
     }}
 
     .section-header-title {{
@@ -1122,10 +1120,10 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # "Review Before Publishing" Hero AI Section
+        # "Review Before Publishing" Hero AI Section (Only renders when unclear_specs exist)
         if st.session_state.rfq_data.get("unclear_specs"):
             with st.container():
-                st.markdown("<div class='aerchain-section' style='border: 1px solid #FEF08A; background-color: #FFFBEB;'>", unsafe_allow_html=True)
+                st.markdown("<div class='aerchain-section' style='border: 1px solid #FEF08A; background-color: #FFFBEB; padding: 16px; border-radius: 6px;'>", unsafe_allow_html=True)
                 st.markdown("<div class='section-header-title' style='color:#B45309;'>Review Before Publishing</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='section-header-subtitle' style='color:#B45309;'>{len(st.session_state.rfq_data['unclear_specs'])} requirements need your input. AI found requirements that were not explicitly defined in your brief.</div>", unsafe_allow_html=True)
                 
@@ -1593,7 +1591,7 @@ elif st.session_state.stage == "Supplier Responses":
             st.rerun()
 
 # =============================================================================
-# STAGE 3: COMPARE QUOTES & COMPLIANCE (FIXED COLUMN GUARD)
+# STAGE 3: COMPARE QUOTES & COMPLIANCE
 # =============================================================================
 elif st.session_state.stage == "Compare Bids":
     with st.container():
@@ -1700,7 +1698,7 @@ elif st.session_state.stage == "Compare Bids":
                 col_rename_map[SUPPLIER_MAP[sname]["norm_col"]] = SUPPLIER_MAP[sname]["prefix"].upper()
             matrix_display = matrix_display.rename(columns=col_rename_map)
 
-            # Metadata Header Bar for Supplier Columns (Guarded against 0 active suppliers)
+            # Metadata Header Bar for Supplier Columns
             if calc["active_suppliers"]:
                 meta_cols = st.columns([1, 2.5, 0.8, 0.8] + [1.5] * len(calc["active_suppliers"]))
                 for idx, sname in enumerate(calc["active_suppliers"]):
@@ -1751,7 +1749,7 @@ elif st.session_state.stage == "Compare Bids":
             styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
             st.dataframe(styled_matrix, use_container_width=True, height=380, hide_index=True)
             
-            # Side-by-Side Provenance & Document Snippet Inspector Popover (SAFE GUARDED FOR len > 0)
+            # Side-by-Side Provenance & Document Snippet Inspector Popover
             with st.popover("Inspect Document Evidence & Provenance Side-by-Side"):
                 st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Line-Item Document Evidence Inspector</div>", unsafe_allow_html=True)
                 st.caption("Verbatim source excerpts and extraction confidence for all active supplier quotes")
@@ -1828,7 +1826,7 @@ elif st.session_state.stage == "Compare Bids":
 elif st.session_state.stage == "Analyze & Decide":
     # 1. Compact Header
     with st.container():
-        st.markdown("<div class='aerchain-section' style='padding: 16px 24px; margin-bottom: 16px;'>", unsafe_allow_html=True)
+        st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Procurement Decision Workspace</div>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-subtitle' style='margin-bottom:0;'>Analyze supplier eligibility, audit exceptions, evaluate price-only split economics, and verify PO pre-requisites.</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
