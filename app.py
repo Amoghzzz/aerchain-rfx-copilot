@@ -358,15 +358,6 @@ st.markdown(f"""
         background-color: #F1F5F9 !important;
     }}
 
-    .review-overlay-card {{
-        background-color: #FFFFFF;
-        border: 2px solid #2563EB;
-        border-radius: 8px;
-        padding: 24px;
-        margin-top: 16px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    }}
-
     .section-divider {{
         height: 1px;
         background-color: {DESIGN_SYSTEM['colors']['border_subtle']};
@@ -792,9 +783,6 @@ if "pending_extraction" not in st.session_state:
 if "user_prompt_input" not in st.session_state:
     st.session_state.user_prompt_input = ""
 
-if "show_rfq_review_modal" not in st.session_state:
-    st.session_state.show_rfq_review_modal = False
-
 def sync_rfq_to_master_matrix():
     if st.session_state.rfq_data is None:
         return
@@ -806,7 +794,6 @@ def reset_rfq_session():
     st.session_state.rfq_status = "Draft"
     st.session_state.user_prompt_input = ""
     st.session_state.active_copilot_query = ""
-    st.session_state.show_rfq_review_modal = False
     if "procurement_brief_textarea" in st.session_state:
         del st.session_state["procurement_brief_textarea"]
     st.session_state.responses_unlocked = False
@@ -821,6 +808,54 @@ def reset_rfq_session():
     invalidate_analysis_snapshot()
 
 sync_rfq_to_master_matrix()
+
+# STREAMLIT NATIVE MODAL POPUP DIALOG FOR RFQ REVIEW
+@st.dialog("📋 Executive RFQ Review & Publication Approval", width="large")
+def show_rfq_review_dialog():
+    rfq = st.session_state.rfq_data
+    if rfq is None:
+        st.error("No active RFQ draft found.")
+        return
+
+    st.markdown(f"**Title:** `{rfq.get('title')}` &nbsp;|&nbsp; **Category:** `{rfq.get('category')}` &nbsp;|&nbsp; **Deadline:** `{rfq.get('response_deadline')}`")
+    st.markdown("---")
+    
+    rev_c1, rev_c2, rev_c3 = st.columns(3)
+    with rev_c1:
+        st.markdown("**Commercial Parameters:**")
+        st.markdown(f"• **Payment Terms:** {rfq.get('payment_terms')}")
+        st.markdown(f"• **Price Validity:** {rfq.get('price_validity')}")
+        st.markdown(f"• **Freight Terms:** {rfq.get('freight_terms')}")
+    with rev_c2:
+        st.markdown("**Compliance Constraints:**")
+        st.markdown(f"• **ISO Mandatory:** {'YES' if rfq.get('iso_mandatory') else 'NO'}")
+        st.markdown(f"• **ESG Mandatory:** {'YES' if rfq.get('esg_mandatory') else 'NO'}")
+        st.markdown(f"• **Defect Limit:** {rfq.get('defect_limit')}")
+    with rev_c3:
+        st.markdown("**Line Item Scope:**")
+        st.markdown(f"• **SKU Count:** {len(rfq.get('line_items', []))} Items")
+        st.markdown(f"• **Locations:** {rfq.get('delivery_locations')}")
+        st.markdown(f"• **Sample Req:** {'YES' if rfq.get('sample_required') else 'NO'}")
+        
+    st.markdown("---")
+    st.markdown("**SKU Line Item Schedule Summary:**")
+    preview_df = pd.DataFrame(rfq.get("line_items", []))[["Line #", "Description", "Quantity", "UOM", "Delivery Location", "Target Price (INR)"]]
+    st.dataframe(preview_df.head(10), use_container_width=True, hide_index=True)
+    if len(preview_df) > 10:
+        st.caption(f"... plus {len(preview_df) - 10} additional line items in full schedule.")
+
+    st.markdown("---")
+    act_col1, act_col2 = st.columns([1, 1])
+    with act_col1:
+        if st.button("Confirm & Publish RFQ to Suppliers →", type="primary", use_container_width=True):
+            st.session_state.rfq_status = "Published"
+            st.session_state.responses_unlocked = True
+            st.session_state.stage = "Supplier Responses"
+            scroll_to_top()
+            st.rerun()
+    with act_col2:
+        if st.button("Back to Edit Draft", type="secondary", use_container_width=True):
+            st.rerun()
 
 # DIRECT AI CO-PILOT EXECUTION
 def run_copilot_direct_analysis(query_text, calc_engine):
@@ -1096,7 +1131,6 @@ for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
     with step_cols[idx]:
         if st.button(btn_label, key=f"seq_step_{idx}", type=b_type, disabled=not is_unlocked, use_container_width=True):
             st.session_state.stage = stage_key
-            st.session_state.show_rfq_review_modal = False
             scroll_to_top()
             st.rerun()
 st.markdown("</div>", unsafe_allow_html=True)
@@ -1196,54 +1230,6 @@ if st.session_state.stage == "Create RFQ":
     else:
         current_cat = st.session_state.rfq_data.get("category", "Packaging Materials")
         cat_meta = CATEGORY_DEFAULTS.get(current_cat, CATEGORY_DEFAULTS["Packaging Materials"])
-
-        # PROMINENT FULL-WIDTH RFQ REVIEW OVERLAY CARD (RESTORED POPUP)
-        if st.session_state.show_rfq_review_modal:
-            rfq = st.session_state.rfq_data
-            st.markdown("<div class='review-overlay-card'>", unsafe_allow_html=True)
-            st.markdown(f"<h2 style='margin-top:0; color:#2563EB; font-size:1.3rem;'>📋 Executive RFQ Review & Publication Approval</h2>", unsafe_allow_html=True)
-            st.markdown(f"**Title:** `{rfq.get('title')}` &nbsp;|&nbsp; **Category:** `{rfq.get('category')}` &nbsp;|&nbsp; **Deadline:** `{rfq.get('response_deadline')}`")
-            st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
-            
-            rev_c1, rev_c2, rev_c3 = st.columns(3)
-            with rev_c1:
-                st.markdown("**Commercial Parameters:**")
-                st.markdown(f"• **Payment Terms:** {rfq.get('payment_terms')}")
-                st.markdown(f"• **Price Validity:** {rfq.get('price_validity')}")
-                st.markdown(f"• **Freight Terms:** {rfq.get('freight_terms')}")
-            with rev_c2:
-                st.markdown("**Compliance Constraints:**")
-                st.markdown(f"• **ISO Mandatory:** {'YES' if rfq.get('iso_mandatory') else 'NO'}")
-                st.markdown(f"• **ESG Mandatory:** {'YES' if rfq.get('esg_mandatory') else 'NO'}")
-                st.markdown(f"• **Defect Limit:** {rfq.get('defect_limit')}")
-            with rev_c3:
-                st.markdown("**Line Item Scope:**")
-                st.markdown(f"• **SKU Count:** {len(rfq.get('line_items', []))} Items")
-                st.markdown(f"• **Locations:** {rfq.get('delivery_locations')}")
-                st.markdown(f"• **Sample Req:** {'YES' if rfq.get('sample_required') else 'NO'}")
-                
-            st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
-            st.markdown("**SKU Line Item Schedule Summary:**")
-            preview_df = pd.DataFrame(rfq.get("line_items", []))[["Line #", "Description", "Quantity", "UOM", "Delivery Location", "Target Price (INR)"]]
-            st.dataframe(preview_df.head(10), use_container_width=True, hide_index=True)
-            if len(preview_df) > 10:
-                st.caption(f"... plus {len(preview_df) - 10} additional line items in full schedule.")
-
-            st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
-            act_col1, act_col2 = st.columns([1, 1])
-            with act_col1:
-                if st.button("Confirm & Publish RFQ to Suppliers →", type="primary", use_container_width=True):
-                    st.session_state.rfq_status = "Published"
-                    st.session_state.responses_unlocked = True
-                    st.session_state.show_rfq_review_modal = False
-                    st.session_state.stage = "Supplier Responses"
-                    scroll_to_top()
-                    st.rerun()
-            with act_col2:
-                if st.button("Back to Edit Draft", type="secondary", use_container_width=True):
-                    st.session_state.show_rfq_review_modal = False
-                    st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
@@ -1397,9 +1383,9 @@ if st.session_state.stage == "Create RFQ":
                     st.session_state.rfq_status = "Draft (Saved)"
                     st.toast("✓ RFQ draft saved successfully!", icon="💾")
             with f3:
+                # TRIGGERS NATIVE STREAMLIT POP-UP DIALOG
                 if st.button("Review & Publish RFQ →", type="primary", disabled=has_invalid_qty, use_container_width=True):
-                    st.session_state.show_rfq_review_modal = True
-                    st.rerun()
+                    show_rfq_review_dialog()
 
             st.markdown("</div>", unsafe_allow_html=True)
 
