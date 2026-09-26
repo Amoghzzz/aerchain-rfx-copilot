@@ -65,7 +65,6 @@ DESIGN_SYSTEM = {
     }
 }
 
-# Dynamic Category Commercial & Qualification Defaults
 CATEGORY_DEFAULTS = {
     "Packaging Materials": {
         "suppliers": ["Apex Packaging", "BoxCraft Ltd", "CorruSeal Global", "National Paper Mills", "PackTech Solutions"],
@@ -690,7 +689,7 @@ if "rfq_status" not in st.session_state:
     st.session_state.rfq_status = "Draft"
 
 if "rfq_data" not in st.session_state:
-    st.session_state.rfq_data = None  # None until user generates RFQ
+    st.session_state.rfq_data = None
 
 if "responses_unlocked" not in st.session_state:
     st.session_state.responses_unlocked = False
@@ -733,9 +732,6 @@ if "uploaded_docs_log" not in st.session_state:
 
 if "pending_extraction" not in st.session_state:
     st.session_state.pending_extraction = None
-
-if "exception_filter" not in st.session_state:
-    st.session_state.exception_filter = "All line items"
 
 if "user_prompt_input" not in st.session_state:
     st.session_state.user_prompt_input = ""
@@ -1583,7 +1579,7 @@ elif st.session_state.stage == "Supplier Responses":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Supplier Response Inbox Table
+    # REFINED Supplier Response Inbox Table (REMOVED redundant Data Quality column per feedback)
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Supplier Response Status Inbox</div>", unsafe_allow_html=True)
@@ -1631,8 +1627,7 @@ elif st.session_state.stage == "Supplier Responses":
                     "Extraction Confidence": ext_confidence,
                     "SKU Line Coverage": coverage,
                     "Qualification Status": qual_str,
-                    "Offered Payment Terms": pay_terms_val,
-                    "Data Quality": "Complete" if info["is_complete"] else "Review Required"
+                    "Offered Payment Terms": pay_terms_val
                 })
                 
             st.dataframe(pd.DataFrame(inbox_rows), use_container_width=True, hide_index=True)
@@ -1653,7 +1648,7 @@ elif st.session_state.stage == "Supplier Responses":
             st.rerun()
 
 # =============================================================================
-# STAGE 3: UNIFIED COMPARISON & DECISION WORKSPACE (ALL-IN-ONE)
+# STAGE 3: UNIFIED COMPARISON & DECISION WORKSPACE (WITH LOWEST PRICE HIGHLIGHTING)
 # =============================================================================
 elif st.session_state.stage == "Compare & Decide":
     active_sups = get_active_suppliers()
@@ -1672,26 +1667,69 @@ elif st.session_state.stage == "Compare & Decide":
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Single Side-by-Side Response Comparison Workspace</div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-subtitle'>All supplier responses landed side-by-side: same lines, same units, same currency — with questionnaire answers and attached document evidence sitting directly alongside the commercial numbers.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-subtitle'>All supplier responses landed side-by-side: same lines, same units, same currency — with lowest bidder badges and questionnaire compliance sitting directly alongside the numbers.</div>", unsafe_allow_html=True)
 
         tab_prices, tab_quest, tab_docs = st.tabs([
-            "📊 Line-Item Pricing Matrix (Same Lines, Units & Currency)", 
+            "📊 Line-Item Pricing Matrix & Lowest Bid Highlights", 
             "📋 Supplier Questionnaire & Compliance Answers",
             "📄 Document Evidence & Source Provenance Inspector"
         ])
 
         with tab_prices:
             matrix_cols = ["Line #", "Description", "Quantity", "UOM", "Target Price (INR)"]
+            supplier_cols = []
             for sname in calc["active_suppliers"]:
-                matrix_cols.append(sup_map[sname]["norm_col"])
+                col_name = sup_map[sname]["norm_col"]
+                matrix_cols.append(col_name)
+                supplier_cols.append(col_name)
                 
             matrix_display = st.session_state.master_matrix[matrix_cols].copy()
+            
+            # Compute Lowest Bidder per Line Item for decision highlighting
+            lowest_bidders = []
+            lowest_prices = []
+            for idx, row in matrix_display.iterrows():
+                valid_prices = {}
+                for sname in calc["active_suppliers"]:
+                    c_col = sup_map[sname]["norm_col"]
+                    val = row[c_col]
+                    if pd.notnull(val) and val > 0:
+                        valid_prices[sname] = val
+                if valid_prices:
+                    best_sup = min(valid_prices, key=valid_prices.get)
+                    best_p = valid_prices[best_sup]
+                    lowest_bidders.append(best_sup)
+                    lowest_prices.append(f"₹{best_p:.2f}")
+                else:
+                    lowest_bidders.append("None")
+                    lowest_prices.append("—")
+                    
+            matrix_display.insert(5, "Lowest Price Bidder", lowest_bidders)
+            matrix_display.insert(6, "Lowest Price (INR)", lowest_prices)
+
             col_rename_map = {"Quantity": "Qty", "Target Price (INR)": "Target (₹)"}
             for sname in calc["active_suppliers"]:
                 col_rename_map[sup_map[sname]["norm_col"]] = f"{sup_map[sname]['prefix'].upper()} (₹)"
             matrix_display = matrix_display.rename(columns=col_rename_map)
 
-            st.dataframe(matrix_display, use_container_width=True, height=360, hide_index=True)
+            # Apply Color Highlights to lowest bid columns using Styler
+            def highlight_lowest_cells(df_data):
+                styled_df = pd.DataFrame('', index=df_data.index, columns=df_data.columns)
+                for idx, row in df_data.iterrows():
+                    best_sup = lowest_bidders[idx]
+                    if best_sup != "None":
+                        best_col_renamed = f"{sup_map[best_sup]['prefix'].upper()} (₹)"
+                        if best_col_renamed in df_data.columns:
+                            styled_df.loc[idx, best_col_renamed] = 'background-color: #DCFCE7; color: #15803D; font-weight: bold;'
+                            styled_df.loc[idx, "Lowest Price Bidder"] = 'background-color: #EFF6FF; color: #1D4ED8; font-weight: bold;'
+                return styled_df
+
+            styled_matrix = matrix_display.style.apply(highlight_lowest_cells, axis=None).format(
+                subset=[f"{sup_map[s]['prefix'].upper()} (₹)" for s in calc["active_suppliers"]],
+                formatter="₹{:.2f}"
+            ).format(subset=["Target (₹)"], formatter="₹{:.2f}")
+
+            st.dataframe(styled_matrix, use_container_width=True, height=380, hide_index=True)
 
         with tab_quest:
             st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Qualification & Questionnaire Criteria Comparison</div>", unsafe_allow_html=True)
