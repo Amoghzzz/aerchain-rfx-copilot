@@ -1215,8 +1215,8 @@ if st.session_state.stage == "Create RFQ":
             
             top_title_col, top_reset_col = st.columns([3, 1])
             with top_title_col:
-                st.markdown(f"<div class='section-header-title'>{st.session_state.rfq_data['title']}</div>", unsafe_allow_html=True)
-                st.caption(f"DRAFT · AI GENERATED ({st.session_state.rfq_data['category']})")
+                st.markdown(f"<div class='section-header-title'>{st.session_state.rfq_data.get('title', 'Corrugated Packaging Sourcing 2026')}</div>", unsafe_allow_html=True)
+                st.caption(f"DRAFT · AI GENERATED ({st.session_state.rfq_data.get('category', 'Packaging Materials')})")
             with top_reset_col:
                 if st.button("🔄 Start New RFQ", type="secondary", use_container_width=True):
                     reset_rfq_session()
@@ -1227,15 +1227,15 @@ if st.session_state.stage == "Create RFQ":
             # Equal Height KPI Grid
             ov1, ov2, ov3, ov4, ov5 = st.columns(5)
             with ov1:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Category & Scope</div><div class='kpi-value'>{len(st.session_state.rfq_data['line_items'])} SKUs</div><div class='kpi-subtext'>{st.session_state.rfq_data['category']}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Category & Scope</div><div class='kpi-value'>{len(st.session_state.rfq_data.get('line_items', []))} SKUs</div><div class='kpi-subtext'>{st.session_state.rfq_data.get('category', 'Packaging Materials')}</div></div>", unsafe_allow_html=True)
             with ov2:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Locations</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data['delivery_locations']}</div><div class='kpi-subtext'>Delivery hubs</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Locations</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data.get('delivery_locations', 'Bhiwandi & Hosur')}</div><div class='kpi-subtext'>Delivery hubs</div></div>", unsafe_allow_html=True)
             with ov3:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Deadline</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['response_deadline']}</div><div class='kpi-subtext'>Response window</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Deadline</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data.get('response_deadline', '15 Oct 2026')}</div><div class='kpi-subtext'>Response window</div></div>", unsafe_allow_html=True)
             with ov4:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Payment & Incoterm</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data['payment_terms']}</div><div class='kpi-subtext'>{st.session_state.rfq_data['incoterms_year']} Terms</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Payment & Incoterm</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data.get('payment_terms', 'Net 60 Days')}</div><div class='kpi-subtext'>{st.session_state.rfq_data.get('incoterms_year', '2020')} Terms</div></div>", unsafe_allow_html=True)
             with ov5:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Freight & Logistics</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data['freight_terms']}</div><div class='kpi-subtext'>Delivery terms</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Freight & Logistics</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data.get('freight_terms', 'Supplier Prepaid (DDP)')}</div><div class='kpi-subtext'>Delivery terms</div></div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1326,7 +1326,6 @@ if st.session_state.stage == "Create RFQ":
                         st.markdown(f"{spec.get('finding', 'Not specified')} → *{spec.get('action', 'Action required')}*")
                     with c_spec3:
                         if st.button(f"Confirm & Apply", key=f"confirm_spec_{idx}", type="secondary", use_container_width=True):
-                            # Actionable enforcement: Apply recommendation directly to active RFQ specifications
                             if "buffer" in spec.get("requirement", "").lower():
                                 st.session_state.rfq_data["scope"] += " (Enforcing 10% peak volume buffer)"
                             st.session_state.rfq_data["unclear_specs"] = [s for s in st.session_state.rfq_data["unclear_specs"] if s.get("requirement") != spec.get("requirement")]
