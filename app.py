@@ -809,6 +809,31 @@ def reset_rfq_session():
 
 sync_rfq_to_master_matrix()
 
+# RESTORED REVIEW MODAL DIALOG
+if hasattr(st, "dialog"):
+    @st.dialog("Review & Publish Procurement RFQ")
+    def show_rfq_publish_dialog():
+        rfq = st.session_state.rfq_data
+        st.markdown(f"### {rfq.get('title', 'RFQ Draft')}")
+        st.markdown(f"**Category:** {rfq.get('category', 'General')}")
+        st.markdown(f"**Total SKUs:** {len(rfq.get('line_items', []))} items")
+        st.markdown(f"**Payment Terms:** {rfq.get('payment_terms')}")
+        st.markdown(f"**Freight Scope:** {rfq.get('freight_terms')}")
+        
+        st.markdown("---")
+        st.markdown("Click **Confirm & Publish** to finalize this requirement and open supplier quote ingestion.")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Confirm & Publish RFQ →", type="primary", use_container_width=True):
+                st.session_state.rfq_status = "Published"
+                st.session_state.responses_unlocked = True
+                st.session_state.stage = "Supplier Responses"
+                st.rerun()
+        with c2:
+            if st.button("Cancel", type="secondary", use_container_width=True):
+                st.rerun()
+
 # DIRECT AI CO-PILOT EXECUTION
 def run_copilot_direct_analysis(query_text, calc_engine):
     matrix_json = st.session_state.master_matrix.to_json(orient="records")
@@ -1335,12 +1360,16 @@ if st.session_state.stage == "Create RFQ":
                     st.session_state.rfq_status = "Draft (Saved)"
                     st.toast("✓ RFQ draft saved successfully!", icon="💾")
             with f3:
+                # TRIGGERS RESTORED @st.dialog MODAL
                 if st.button("Review & Publish RFQ →", type="primary", disabled=has_invalid_qty, use_container_width=True):
-                    st.session_state.rfq_status = "Published"
-                    st.session_state.responses_unlocked = True
-                    st.session_state.stage = "Supplier Responses"
-                    scroll_to_top()
-                    st.rerun()
+                    if hasattr(st, "dialog"):
+                        show_rfq_publish_dialog()
+                    else:
+                        st.session_state.rfq_status = "Published"
+                        st.session_state.responses_unlocked = True
+                        st.session_state.stage = "Supplier Responses"
+                        scroll_to_top()
+                        st.rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)
 
