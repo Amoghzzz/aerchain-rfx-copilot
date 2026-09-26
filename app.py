@@ -74,11 +74,11 @@ SUPPLIERS = [
 ]
 
 SUPPLIER_MAP = {
-    "Apex Packaging": {"prefix": "Apex", "orig_col": "Apex_Orig_Price", "norm_col": "Apex_Norm_INR", "status_col": "Apex_Status", "conf_col": "Apex_Confidence", "source_col": "Apex_Source_Ref"},
-    "BoxCraft Ltd": {"prefix": "BoxCraft", "orig_col": "BoxCraft_Orig_Price", "norm_col": "BoxCraft_Norm_INR", "status_col": "BoxCraft_Status", "conf_col": "BoxCraft_Confidence", "source_col": "BoxCraft_Source_Ref"},
-    "CorruSeal Global": {"prefix": "CorruSeal", "orig_col": "CorruSeal_Orig_Price", "norm_col": "CorruSeal_Norm_INR", "status_col": "CorruSeal_Status", "conf_col": "CorruSeal_Confidence", "source_col": "CorruSeal_Source_Ref"},
-    "National Paper Mills": {"prefix": "National", "orig_col": "National_Orig_Price", "norm_col": "National_Norm_INR", "status_col": "National_Status", "conf_col": "National_Confidence", "source_col": "National_Source_Ref"},
-    "PackTech Solutions": {"prefix": "PackTech", "orig_col": "PackTech_Orig_Price", "norm_col": "PackTech_Norm_INR", "status_col": "PackTech_Status", "conf_col": "PackTech_Confidence", "source_col": "PackTech_Source_Ref"}
+    "Apex Packaging": {"prefix": "Apex", "orig_col": "Apex_Orig_Price", "norm_col": "Apex_Norm_INR", "status_col": "Apex_Status", "conf_col": "Apex_Confidence", "source_col": "Apex_Source_Ref", "snippet_col": "Apex_Snippet"},
+    "BoxCraft Ltd": {"prefix": "BoxCraft", "orig_col": "BoxCraft_Orig_Price", "norm_col": "BoxCraft_Norm_INR", "status_col": "BoxCraft_Status", "conf_col": "BoxCraft_Confidence", "source_col": "BoxCraft_Source_Ref", "snippet_col": "BoxCraft_Snippet"},
+    "CorruSeal Global": {"prefix": "CorruSeal", "orig_col": "CorruSeal_Orig_Price", "norm_col": "CorruSeal_Norm_INR", "status_col": "CorruSeal_Status", "conf_col": "CorruSeal_Confidence", "source_col": "CorruSeal_Source_Ref", "snippet_col": "CorruSeal_Snippet"},
+    "National Paper Mills": {"prefix": "National", "orig_col": "National_Orig_Price", "norm_col": "National_Norm_INR", "status_col": "National_Status", "conf_col": "National_Confidence", "source_col": "National_Source_Ref", "snippet_col": "National_Snippet"},
+    "PackTech Solutions": {"prefix": "PackTech", "orig_col": "PackTech_Orig_Price", "norm_col": "PackTech_Norm_INR", "status_col": "PackTech_Status", "conf_col": "PackTech_Confidence", "source_col": "PackTech_Source_Ref", "snippet_col": "PackTech_Snippet"}
 }
 
 # =============================================================================
@@ -264,7 +264,6 @@ st.markdown(f"""
         background-color: #F1F5F9 !important;
     }}
 
-    /* Decision basis column styles */
     .decision-list-item {{
         font-size: 0.83rem;
         color: {DESIGN_SYSTEM['colors']['text_primary']};
@@ -486,6 +485,13 @@ def get_supplier_prefabricated_dataset():
         p4_per_100 = round(base_price * 96.0, 2)
         p4_norm = round(p4_per_100 / 100.0, 2)
         p5_orig = round(base_price * 0.95, 2) if idx <= 24 else None
+
+        # Verbatim source snippets for provenance inspection
+        snip_1 = f"Item #{idx:03d} ({it['Description']}): ₹{p1_orig:.2f} per unit net DDP Bhiwandi."
+        snip_2 = f"SKU ITEM-{idx:03d} rate: ₹{p2_orig:.2f}/pc." if p2_orig else "Item not listed in commercial bid Schedule B."
+        snip_3 = f"Part ITEM-{idx:03d}: USD ${p3_usd:.2f}/unit (converted at ₹83.50/USD baseline)."
+        snip_4 = f"ITEM-{idx:03d} bulk pack rate: ₹{p4_per_100:.2f} per 100 pcs (scanned OCR image rate-card.jpg)." if idx != 20 else f"ITEM-020 rate-card OCR smudge: ₹{p4_per_100:.2f} / [ambiguous unit]."
+        snip_5 = f"ITEM-{idx:03d} quote: ₹{p5_orig:.2f} / pc." if p5_orig else "Line unquoted in PackTech submission."
         
         master.append({
             "Line #": it["Line #"],
@@ -499,31 +505,36 @@ def get_supplier_prefabricated_dataset():
             "Apex_Norm_INR": p1_orig,
             "Apex_Status": "CONFIRMED",
             "Apex_Confidence": "98%",
-            "Apex_Source_Ref": "Demo Baseline",
+            "Apex_Source_Ref": "PDF Schedule A · Page 1",
+            "Apex_Snippet": snip_1,
             
             "BoxCraft_Orig_Price": f"₹{p2_orig:.2f} / pc" if p2_orig else "NOT QUOTED",
             "BoxCraft_Norm_INR": p2_orig,
             "BoxCraft_Status": "CONFIRMED" if p2_orig else "MISSING",
             "BoxCraft_Confidence": "95%" if p2_orig else "0%",
-            "BoxCraft_Source_Ref": "Demo Baseline" if p2_orig else "N/A",
+            "BoxCraft_Source_Ref": "XLSX Proposal · Sheet 1, Row 14" if p2_orig else "N/A",
+            "BoxCraft_Snippet": snip_2,
             
             "CorruSeal_Orig_Price": f"${p3_usd:.2f} / pc",
             "CorruSeal_Norm_INR": p3_norm,
             "CorruSeal_Status": "NORMALIZED",
             "CorruSeal_Confidence": "96%",
-            "CorruSeal_Source_Ref": "Demo Baseline",
+            "CorruSeal_Source_Ref": "DOCX Quote · Commercial Terms Page 2",
+            "CorruSeal_Snippet": snip_3,
             
             "National_Orig_Price": f"₹{p4_per_100:.2f} / 100 pcs",
             "National_Norm_INR": p4_norm,
             "National_Status": "NORMALIZED" if idx != 20 else "REVIEW REQUIRED",
             "National_Confidence": "88%" if idx != 20 else "58% (Scanned Digit Ambiguity)",
-            "National_Source_Ref": "Demo Baseline",
+            "National_Source_Ref": "rate-card-photo.jpg · Page 1",
+            "National_Snippet": snip_4,
             
-            "PackTech_Orig_Price": f"₹{p5_orig:.2f} / pc" if p5_orig else "UNAVAILABLE (Prior-year reference without price)",
+            "PackTech_Orig_Price": f"₹{p5_orig:.2f} / pc" if p5_orig else "UNAVAILABLE",
             "PackTech_Norm_INR": p5_orig,
             "PackTech_Status": "CONFIRMED" if p5_orig else "MISSING",
             "PackTech_Confidence": "90%" if p5_orig else "0%",
-            "PackTech_Source_Ref": "Demo Baseline" if p5_orig else "N/A"
+            "PackTech_Source_Ref": "TXT Commercial Email" if p5_orig else "N/A",
+            "PackTech_Snippet": snip_5
         })
     return pd.DataFrame(master)
 
@@ -1253,6 +1264,7 @@ elif st.session_state.stage == "Supplier Responses":
                                      "quoted_price": 22.50,
                                      "currency": "INR",
                                      "original_quote_text": "string (exact verbatim text from document, e.g. '$45 / carton of 100 pcs')",
+                                     "verbatim_snippet": "string (exact raw excerpt surrounding price quote)",
                                      "quoted_uom": "pcs or 100 pcs or box or carton or kg",
                                      "price_basis_quantity": 1.0,
                                      "price_basis_uom": "pcs",
@@ -1332,6 +1344,7 @@ elif st.session_state.stage == "Supplier Responses":
                 curr = str(item.get("currency", "INR")).upper()
                 q_uom = str(item.get("quoted_uom", "pc")).lower()
                 orig_verbatim = item.get("original_quote_text", "")
+                verb_snip = item.get("verbatim_snippet", orig_verbatim or "Raw quote excerpt from document")
                 
                 try:
                     basis_qty = float(item.get("price_basis_quantity", 1.0) or 1.0)
@@ -1408,13 +1421,35 @@ elif st.session_state.stage == "Supplier Responses":
                     "Normalized INR": norm_price if norm_price is not None else "—",
                     "How it was normalized": basis_desc,
                     "Source": src_ref,
+                    "Verbatim Snippet": verb_snip,
                     "Extraction confidence": conf_str,
                     "Validation Status": status_str,
                     "Source Type": "Supplier Submitted"
                 })
             
             extracted_total = len(review_table)
-            st.dataframe(pd.DataFrame(review_table), use_container_width=True, height=220, hide_index=True)
+            
+            # Interactive Document Inspector Table View
+            st.dataframe(
+                pd.DataFrame(review_table)[["Line #", "Original Quote", "Normalized INR", "How it was normalized", "Source", "Extraction confidence", "Validation Status"]],
+                use_container_width=True,
+                height=220,
+                hide_index=True
+            )
+            
+            # Side-by-Side Document Source Inspector Popover
+            with st.popover("Inspect Raw Document Snippets & Provenance Evidence"):
+                st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Document Provenance Inspector</div>", unsafe_allow_html=True)
+                st.caption(f"Verbatim text excerpts parsed from `{st.session_state.pending_extraction['file_name']}` for {sname}")
+                for row_entry in review_table:
+                    if "REJECTED" not in row_entry["Validation Status"]:
+                        with st.expander(f"Line {row_entry['Line #']}: {row_entry['Original Quote']} ({row_entry['Validation Status']})"):
+                            st.markdown(f"**Source Reference:** `{row_entry['Source']}`")
+                            st.markdown(f"**Extraction Confidence:** `{row_entry['Extraction confidence']}`")
+                            st.markdown(f"**Normalization Basis:** {row_entry['How it was normalized']}")
+                            st.markdown("**Verbatim Document Snippet:**")
+                            st.code(row_entry['Verbatim Snippet'], language="text")
+
             st.caption(f"Extraction Summary: **{extracted_total} extracted** · **{validated_count} validated** · **{needs_review_count} require review** · **{rejected_count} rejected**")
             st.caption("ℹ Review-required values remain visible but are excluded from sourcing calculations until validated.")
             
@@ -1428,6 +1463,7 @@ elif st.session_state.stage == "Supplier Responses":
                     status_col = meta["status_col"]
                     conf_col = meta["conf_col"]
                     source_col = meta["source_col"]
+                    snippet_col = meta["snippet_col"]
                     
                     # QUOTE REPLACEMENT: Wipe previous supplier entries to prevent stale line leakage
                     st.session_state.master_matrix[norm_col] = None
@@ -1435,6 +1471,7 @@ elif st.session_state.stage == "Supplier Responses":
                     st.session_state.master_matrix[status_col] = "MISSING"
                     st.session_state.master_matrix[conf_col] = "0%"
                     st.session_state.master_matrix[source_col] = "N/A"
+                    st.session_state.master_matrix[snippet_col] = "Line unquoted in submission."
 
                     for row_entry in review_table:
                         if "REJECTED" not in row_entry["Validation Status"]:
@@ -1444,12 +1481,14 @@ elif st.session_state.stage == "Supplier Responses":
                             status_val = row_entry["Validation Status"]
                             conf_val = row_entry["Extraction confidence"]
                             src_val = row_entry["Source"]
+                            snip_val = row_entry["Verbatim Snippet"]
                             
                             st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, norm_col] = norm_val
                             st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, orig_col] = orig_rep
                             st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, status_col] = status_val
                             st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, conf_col] = conf_val
                             st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, source_col] = src_val
+                            st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, snippet_col] = snip_val
                             
                     st.session_state.uploaded_suppliers.add(sname)
                     st.session_state.supplier_quote_fingerprints[sname] = st.session_state.rfq_data.get("rfq_fingerprint", "")
@@ -1635,8 +1674,32 @@ elif st.session_state.stage == "Compare Bids":
                 return styles
 
             styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
-            st.dataframe(styled_matrix, use_container_width=True, height=440, hide_index=True)
+            st.dataframe(styled_matrix, use_container_width=True, height=380, hide_index=True)
             
+            # Side-by-Side Provenance & Document Snippet Inspector Popover
+            with st.popover("Inspect Document Evidence & Provenance Side-by-Side"):
+                st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Line-Item Document Evidence Inspector</div>", unsafe_allow_html=True)
+                st.caption("Verbatim source excerpts and extraction confidence for all active supplier quotes")
+                
+                line_select = st.selectbox("Select Line Item to Inspect:", st.session_state.master_matrix["Line #"].tolist())
+                line_row = st.session_state.master_matrix[st.session_state.master_matrix["Line #"] == line_select].iloc[0]
+                
+                st.markdown(f"**SKU:** `{line_row['Line #']}` — {line_row['Description']} ({line_row['Quantity']:,} {line_row['UOM']})")
+                st.markdown("---")
+                
+                p_cols = st.columns(len(calc["active_suppliers"]))
+                for idx, sname in enumerate(calc["active_suppliers"]):
+                    meta = SUPPLIER_MAP[sname]
+                    with p_cols[idx]:
+                        st.markdown(f"**{sname}**")
+                        st.markdown(f"Quote: `{line_row.get(meta['orig_col'], '—')}`")
+                        st.markdown(f"Norm. INR: `₹{line_row.get(meta['norm_col'], '—')}`")
+                        st.markdown(f"Status: `{line_row.get(meta['status_col'], '—')}`")
+                        st.markdown(f"Confidence: `{line_row.get(meta['conf_col'], '—')}`")
+                        st.markdown(f"Ref: `{line_row.get(meta['source_col'], 'N/A')}`")
+                        st.caption("Verbatim Snippet:")
+                        st.code(line_row.get(meta['snippet_col'], "No snippet available."), language="text")
+
             st.markdown("""
             <div style="font-size: 0.78rem; color: #64748B; margin-top: 6px;">
                 <strong>Legend:</strong> &nbsp;
@@ -1683,7 +1746,7 @@ elif st.session_state.stage == "Compare Bids":
 elif st.session_state.stage == "Analyze & Decide":
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-title'>Sourcing Scenario Analysis</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Sourcing Scenario Analysis & Award Decision Framework</div>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-subtitle'>Evaluate sourcing scenarios using available supplier quote data. Spend calculations follow defined sourcing rules; AI interprets trade-offs and data gaps.</div>", unsafe_allow_html=True)
 
         calc = calculate_deterministic_spend_engine(
@@ -1701,25 +1764,31 @@ elif st.session_state.stage == "Analyze & Decide":
             if is_stale:
                 st.warning("⚠️ **Dataset Modified Since Last Analysis:** RFQ requirements or supplier quote availability have changed since this analysis was generated. Click 'Run analysis' below to refresh results.")
 
-        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#475569; margin-bottom:8px;'>SUGGESTED ANALYSIS ACTIONS</div>", unsafe_allow_html=True)
-        q_col1, q_col2, q_col3 = st.columns(3)
+        # Guided 4-Step Analyst Conversation Arc Stepper
+        st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>GUIDED ANALYST CONVERSATION ARC</div>", unsafe_allow_html=True)
+        st.caption("Execute the standard 4-step procurement evaluation narrative sequentially:")
+        
+        arc_c1, arc_c2, arc_c3, arc_c4 = st.columns(4)
         prompt_choice = None
-        if q_col1.button("Lowest qualified split", type="secondary", use_container_width=True):
-            prompt_choice = "What happens if we split the award across qualified suppliers based on lowest unit price?"
-        if q_col2.button("Supplier eligibility", type="secondary", use_container_width=True):
-            prompt_choice = "Why are certain suppliers excluded from full award scenarios?"
-        if q_col3.button("Landed-cost gaps", type="secondary", use_container_width=True):
-            prompt_choice = "What data is missing to calculate landed cost?"
+        
+        if arc_c1.button("1. Supplier Eligibility", type="secondary", use_container_width=True):
+            prompt_choice = "Which suppliers are actually eligible for a price-only comparison?"
+        if arc_c2.button("2. Price-Only Allocation", type="secondary", use_container_width=True):
+            prompt_choice = "What happens if we split the award across qualified suppliers based on lowest usable price?"
+        if arc_c3.button("3. Landed-Cost Gaps", type="secondary", use_container_width=True):
+            prompt_choice = "Why can't you give me landed cost yet?"
+        if arc_c4.button("4. Exception Audit", type="secondary", use_container_width=True):
+            prompt_choice = "Which lines still need human review or revalidation before award?"
 
         user_query = st.text_input(
-            "Ask a sourcing question:",
-            value=prompt_choice if prompt_choice else (st.session_state.last_analysis_query if st.session_state.last_analysis_query else ""),
+            "Ask a sourcing question or select a conversation arc step above:",
+            value=prompt_choice if prompt_choice else (st.session_state.last_analysis_query if st.session_state.last_analysis_query else "What happens if we split the award across qualified suppliers based on lowest usable price?"),
             placeholder="e.g. What happens if we split the award across qualified suppliers based on lowest price?"
         )
 
         if st.button("Run analysis", type="primary"):
             if not user_query:
-                st.warning("Please enter a question or select a common analysis shortcut.")
+                st.warning("Please enter a question or select a conversation arc step.")
             else:
                 with st.spinner("Evaluating sourcing scenario..."):
                     matrix_json = st.session_state.master_matrix.to_json(orient="records")
@@ -1840,26 +1909,17 @@ elif st.session_state.stage == "Analyze & Decide":
                     st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div></div>", unsafe_allow_html=True)
                 with m4:
                     st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{ctx['exception_lines']}</div></div>", unsafe_allow_html=True)
-                    
-            elif "capacity" in q_lower or "volume" in q_lower:
-                rfq_uoms = set(it["UOM"] for it in st.session_state.rfq_data["line_items"])
-                if len(rfq_uoms) == 1:
-                    single_uom = list(rfq_uoms)[0]
-                    total_req_units = sum(it["Quantity"] for it in st.session_state.rfq_data["line_items"])
-                    vol_metric_val = f"{total_req_units:,} {single_uom}"
-                else:
-                    vol_metric_val = f"Mixed UOMs ({len(st.session_state.rfq_data['line_items'])} lines)"
 
+            elif "review" in q_lower or "human" in q_lower or "revalid" in q_lower or "exception" in q_lower:
                 m1, m2, m3, m4 = st.columns(4)
                 with m1:
-                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Required RFQ Volume</div><div class='kpi-value'>{vol_metric_val}</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Total Exceptions</div><div class='kpi-value'>{ctx['exception_lines']} Lines</div></div>", unsafe_allow_html=True)
                 with m2:
-                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Reporting Vendors</div><div class='kpi-value'>{ctx['active_count']} / {ctx['active_count']}</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Unquoted Lines</div><div class='kpi-value'>{calc['missing_line_count']}</div></div>", unsafe_allow_html=True)
                 with m3:
-                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Capacity Basis</div><div class='kpi-value'>Monthly</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Low-Confidence OCR</div><div class='kpi-value'>{calc['data_quality_count']}</div></div>", unsafe_allow_html=True)
                 with m4:
-                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Assessment Status</div><div class='kpi-value'>Inconclusive</div></div>", unsafe_allow_html=True)
-                st.caption("ℹ Supplier capacity is reported monthly. RFQ fulfillment period is not specified, so capacity sufficiency cannot be conclusively determined.")
+                    st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Audit Action</div><div class='kpi-value'>Required</div></div>", unsafe_allow_html=True)
 
             elif "split" in q_lower or "cheapest" in q_lower or "award" in q_lower or "lowest" in q_lower:
                 m1, m2, m3, m4 = st.columns(4)
@@ -1910,21 +1970,45 @@ elif st.session_state.stage == "Analyze & Decide":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Decision Basis Panel Section
+        # Defensible Award Decision Readiness Framework Section
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-            st.markdown("<div class='section-header-title'>Decision Basis & Methodology</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-header-subtitle'>Explicit boundaries of calculated figures and current data gaps.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-title'>Award Decision Readiness Framework</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-subtitle'>Explicit boundary conditions and pre-award action items required before issuing purchase orders.</div>", unsafe_allow_html=True)
             
+            st.markdown(f"""
+            <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 16px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.85rem; font-weight: 700; color: #0F172A; text-transform: uppercase; letter-spacing: 0.05em;">
+                        CURRENT STATUS: PROVISIONAL AWARD (PRICE-ONLY BASELINE)
+                    </span>
+                    <span class="badge-base badge-review">PROVISIONAL</span>
+                </div>
+                <div style="font-size: 0.83rem; color: #475569; margin-top: 8px;">
+                    Based on currently validated quote data, the lowest-cost qualified split allocation represents an illustrative spend of <strong>₹{calc['split_spend']:,.0f}</strong> across {len(st.session_state.rfq_data['line_items']) - calc['unassigned_count']} SKUs.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>MANDATORY PRE-AWARD ACTION ITEMS (BLOCKERS TO EXECUTION)</div>", unsafe_allow_html=True)
+            
+            b_c1, b_c2 = st.columns(2)
+            with b_c1:
+                st.markdown("<div class='decision-list-item'><span style='color:#B45309; font-weight:700;'>1. Tax Verification:</span> Obtain numerical GST percentage rates for selected suppliers.</div>", unsafe_allow_html=True)
+                st.markdown("<div class='decision-list-item'><span style='color:#B45309; font-weight:700;'>2. Freight Costing:</span> Confirm exact freight rates for non-DDP lines (BoxCraft & National Paper Mills).</div>", unsafe_allow_html=True)
+            with b_c2:
+                st.markdown(f"<div class='decision-list-item'><span style='color:#B45309; font-weight:700;'>3. Exception Audit:</span> Resolve {calc['total_line_exceptions']} pending Review Required / unquoted lines.</div>", unsafe_allow_html=True)
+                st.markdown("<div class='decision-list-item'><span style='color:#B45309; font-weight:700;'>4. Capacity Allocation:</span> Verify monthly production capacity against delivery schedule.</div>", unsafe_allow_html=True)
+
             db_c1, db_c2 = st.columns(2)
             with db_c1:
-                st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#166534; margin-bottom:8px;'>CALCULATED FROM</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#166534; margin:16px 0 8px 0;'>VALIDATED IN THIS BASELINE</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>✓ Normalized unit prices (INR / requested UOM)</div>", unsafe_allow_html=True)
-                st.markdown("<div class='decision-list-item'>✓ Requested RFQ quantities</div>", unsafe_allow_html=True)
+                st.markdown("<div class='decision-list-item'>✓ Requested RFQ quantities & SKU specs</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>✓ Supplier qualification status (ISO 9001 + Defect rate)</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>✓ Quote completeness & usable lines</div>", unsafe_allow_html=True)
             with db_c2:
-                st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#991B1B; margin-bottom:8px;'>NOT INCLUDED</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#991B1B; margin:16px 0 8px 0;'>EXCLUDED FROM PRICE-ONLY SCENARIO</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>— GST rates & numerical tax amounts</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>— Freight cost amounts (DDP vs Buyer Collect)</div>", unsafe_allow_html=True)
                 st.markdown("<div class='decision-list-item'>— Lead time & delivery schedule buffer</div>", unsafe_allow_html=True)
@@ -1986,6 +2070,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 meta = SUPPLIER_MAP[sname]
                 raw_src = row.get(meta["source_col"])
                 clean_src = raw_src if (raw_src and pd.notna(raw_src) and str(raw_src).strip()) else "Source Reference Unavailable"
+                snip_src = row.get(meta["snippet_col"], "No snippet available.")
                 
                 is_submitted = sname in st.session_state.uploaded_suppliers
                 quote_fp = st.session_state.supplier_quote_fingerprints.get(sname, "") if is_submitted else current_rfq_fp
@@ -2008,6 +2093,7 @@ elif st.session_state.stage == "Analyze & Decide":
                     "Validation Status": row.get(meta["status_col"], "—"),
                     "Extraction confidence": row.get(meta["conf_col"], "—"),
                     "Source": clean_src,
+                    "Verbatim Snippet": snip_src,
                     "Source Type": "Supplier Submitted" if is_submitted else "Demo Baseline",
                     "Quote Version Status": q_ver_status,
                     "RFQ Fingerprint": current_rfq_fp,
