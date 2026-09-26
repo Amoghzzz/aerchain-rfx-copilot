@@ -355,7 +355,8 @@ def scroll_to_top():
     st.components.v1.html(
         """
         <script>
-            window.parent.scrollTo({top: 0, behavior: 'instant'});
+            window.parent.scrollTo(0, 0);
+            window.scrollTo(0, 0);
         </script>
         """,
         height=0
@@ -1100,17 +1101,17 @@ if st.session_state.stage == "Create RFQ":
             st.markdown("<div class='section-header-title'>Turn a sourcing requirement into a structured RFQ</div>", unsafe_allow_html=True)
             st.markdown("<div class='section-header-subtitle'>Describe what you're buying, where it is needed, quantities, delivery expectations and any commercial constraints. AI will turn this into an editable RFQ draft.</div>", unsafe_allow_html=True)
 
-            # Fixed feedback #1: Dynamic text area without Ctrl+Enter friction
+            # Fixed feedback #1: Instant button state binding without requiring Ctrl+Enter
             prompt_val = st.text_area(
                 "Procurement Brief:",
                 value=st.session_state.user_prompt_input,
                 height=120,
                 key="procurement_brief_textarea",
-                placeholder="Describe your requirement (e.g., 'Create an RFQ for office furniture for our company across 3 locations. Include 6 line items...')..."
+                placeholder="Describe your requirement (e.g., 'Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities with Net 60 terms' or 'Office furniture across 3 locations')..."
             )
             st.session_state.user_prompt_input = prompt_val
             
-            p_col1, p_col2, p_col3 = st.columns([1.5, 1, 1])
+            p_col1, p_col2, p_col3, p_col4 = st.columns([1.5, 1, 1, 1])
             is_brief_empty = not prompt_val.strip()
             
             with p_col1:
@@ -1141,24 +1142,24 @@ if st.session_state.stage == "Create RFQ":
                             "installation_required": "Vendor Included",
                             "response_deadline": "string",
                             "unclear_specs": [
-                                {"requirement": "Installation Charges & Scope", "finding": "Not detailed in brief", "action": "Suggested: Enforce vendor-managed assembly across all locations"}
+                                {"requirement": "Installation & On-Site Scope", "finding": "Not detailed in brief", "action": "Suggested: Enforce vendor-managed assembly across all locations"}
                             ],
                             "line_items": [
                                 {
                                     "Line #": "ITEM-001",
-                                    "Description": "Executive Desk",
-                                    "Quantity": 15,
+                                    "Description": "string",
+                                    "Quantity": 4000,
                                     "UOM": "pcs",
-                                    "Specification": "Teak Finish, Cable Management, 1800x900mm",
-                                    "Delivery Location": "Headquarters",
-                                    "Target Price (INR)": 28500.00
+                                    "Specification": "string",
+                                    "Delivery Location": "string",
+                                    "Target Price (INR)": 28.50
                                 }
                             ]
                         }
                         CRITICAL INSTRUCTION FOR CATEGORY & LINE ITEMS:
-                        - Detect category accurately. If brief mentions furniture (desks, chairs, workstations), set category strictly to 'Office Furniture & Fixtures'.
-                        - Extract the exact line items requested in brief (e.g. if user asks for 6 furniture line items, generate exactly 6 items corresponding to executive desks, workstations, ergonomic chairs, meeting tables, visitor chairs, and storage cabinets).
-                        - Always ensure every line item has a valid non-empty UOM and realistic target unit price in INR.
+                        - If brief mentions furniture (executive desks, chairs, workstations), set category strictly to 'Office Furniture & Fixtures'.
+                        - If brief asks for 30 corrugated packaging SKUs, generate 30 items.
+                        - Extract the exact line item count explicitly requested in the brief.
                         """
                         try:
                             res = client.models.generate_content(
@@ -1197,7 +1198,7 @@ if st.session_state.stage == "Create RFQ":
                                     "title": parsed.get("title", f"{category_detected} Sourcing 2026"),
                                     "category": category_detected,
                                     "scope": parsed.get("scope", f"Procurement of {len(valid_items)} line items."),
-                                    "delivery_locations": parsed.get("delivery_locations", "Bhiwandi, Hosur & Corporate HQ"),
+                                    "delivery_locations": parsed.get("delivery_locations", "Bhiwandi Warehouse & Hosur Facility"),
                                     "payment_terms": parsed.get("payment_terms", cat_defaults["pay_terms"]),
                                     "price_validity": parsed.get("price_validity", cat_defaults["validity"]),
                                     "freight_terms": parsed.get("freight_terms", cat_defaults["freight"]),
@@ -1260,11 +1261,16 @@ if st.session_state.stage == "Create RFQ":
                             scroll_to_top()
                             st.rerun()
 
+            # Fixed feedback #2: Restored 30-SKU packaging demo brief button alongside furniture
             with p_col2:
-                if st.button("Try furniture brief", type="secondary", use_container_width=True):
-                    st.session_state.user_prompt_input = "Create an RFQ for office furniture for our company across 3 locations. Include 6 line items: executive desks, workstations, ergonomic chairs, meeting tables, visitor chairs, and storage cabinets. Ask vendors to quote unit price, quantity, specifications, material, warranty, delivery timeline, installation charges, taxes, and payment terms."
+                if st.button("Try 30-SKU Packaging Brief", type="secondary", use_container_width=True):
+                    st.session_state.user_prompt_input = "Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities. Include supplier qualification requirements, commercial terms, delivery expectations and applicable certifications."
                     st.rerun()
             with p_col3:
+                if st.button("Try Furniture Brief", type="secondary", use_container_width=True):
+                    st.session_state.user_prompt_input = "Create an RFQ for office furniture for our company across 3 locations. Include 6 line items: executive desks, workstations, ergonomic chairs, meeting tables, visitor chairs, and storage cabinets. Ask vendors to quote unit price, quantity, specifications, material, warranty, delivery timeline, installation charges, taxes, and payment terms."
+                    st.rerun()
+            with p_col4:
                 if st.button("🔄 Reset prompt", type="secondary", use_container_width=True):
                     st.session_state.user_prompt_input = ""
                     st.rerun()
@@ -1309,7 +1315,7 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Fixed feedback #4: Context-aware Category Specific Commercial & Qualification Controls
+        # Context-aware Category Specific Commercial & Qualification Controls
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
             st.markdown(f"<div class='section-header-title'>Commercial & Qualification Controls ({current_cat})</div>", unsafe_allow_html=True)
@@ -1359,7 +1365,6 @@ if st.session_state.stage == "Create RFQ":
                 iso_m = st.toggle("ISO 9001 certification mandatory", value=st.session_state.rfq_data.get("iso_mandatory", cat_meta["iso_default"]))
                 esg_m = st.toggle("ESG / E-Waste / Environmental audit mandatory", value=st.session_state.rfq_data.get("esg_mandatory", cat_meta["esg_default"]))
                 
-                # Render FSC toggle only if relevant (e.g. Packaging)
                 if cat_meta.get("fsc_visible", False):
                     fsc_m = st.toggle("FSC sustainability certification mandatory", value=st.session_state.rfq_data.get("fsc_mandatory", cat_meta["fsc_default"]))
                     st.session_state.rfq_data["fsc_mandatory"] = fsc_m
@@ -1391,7 +1396,7 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Actionable "Review Before Publishing" Drawer
+        # Fixed feedback #4: Suggestions applied now directly manipulate RFQ model state
         active_unclear = []
         for spec in st.session_state.rfq_data.get("unclear_specs", []):
             req_name = spec.get("requirement", "").lower()
@@ -1417,12 +1422,14 @@ if st.session_state.stage == "Create RFQ":
                         st.markdown(f"{spec.get('finding', 'Not specified')} → *{spec.get('action', 'Action required')}*")
                     with c_spec3:
                         if st.button(f"Confirm & Apply", key=f"confirm_spec_{idx}", type="secondary", use_container_width=True):
-                            if "installation" in spec.get("requirement", "").lower():
-                                st.session_state.rfq_data["scope"] += " (Enforcing vendor turnkey installation)"
-                            elif "buffer" in spec.get("requirement", "").lower():
+                            req_title = spec.get("requirement", "").lower()
+                            if "installation" in req_title:
+                                st.session_state.rfq_data["installation_required"] = "Vendor Included (Turnkey Enforced)"
+                                st.session_state.rfq_data["scope"] += " (Enforcing vendor turnkey installation across all locations)"
+                            elif "buffer" in req_title:
                                 st.session_state.rfq_data["scope"] += " (Enforcing 10% peak volume buffer)"
                             st.session_state.rfq_data["unclear_specs"] = [s for s in st.session_state.rfq_data["unclear_specs"] if s.get("requirement") != spec.get("requirement")]
-                            st.toast(f"✓ Applied parameter: {spec.get('requirement')}", icon="✅")
+                            st.toast(f"✓ Applied parameter directly to RFQ model: {spec.get('requirement')}", icon="✅")
                             st.rerun()
                             
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -1473,25 +1480,24 @@ if st.session_state.stage == "Create RFQ":
                     st.session_state.rfq_status = "Draft (Saved)"
                     st.toast("✓ RFQ draft saved successfully! All parameters preserved.", icon="💾")
             with f3:
-                # Fixed feedback #3: Review before publishing workflow step
                 if st.button("Review & Publish RFQ →", type="primary", disabled=has_invalid_qty, use_container_width=True):
                     st.session_state.show_publish_review_modal = True
                     st.rerun()
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Fixed feedback #3: Executive Pre-Publish Review Summary Modal Container
+        # Fixed feedback #5: Interactive Review Popup Window showing full conditions, line items, and re-edit options
         if st.session_state.show_publish_review_modal:
             with st.container():
-                st.markdown("<div class='aerchain-section' style='background-color:#F0F9FF; border:1px solid #BAE6FD; padding:20px; border-radius:8px;'>", unsafe_allow_html=True)
-                st.markdown("<div class='section-header-title' style='color:#0369A1;'>📋 Pre-Publishing RFQ Executive Summary Review</div>", unsafe_allow_html=True)
-                st.markdown("<div class='section-header-subtitle' style='color:#0369A1;'>Please verify all final sourcing controls before publishing this RFQ to supplier portals.</div>", unsafe_allow_html=True)
+                st.markdown("<div class='aerchain-section' style='background-color:#F0F9FF; border:1px solid #BAE6FD; padding:24px; border-radius:8px;'>", unsafe_allow_html=True)
+                st.markdown("<div class='section-header-title' style='color:#0369A1; font-size:1.25rem;'>📋 Executive RFQ Review Before Publishing</div>", unsafe_allow_html=True)
+                st.markdown("<div class='section-header-subtitle' style='color:#0369A1;'>Review full procurement specifications, custom applied conditions, and SKU pricing breakdown below.</div>", unsafe_allow_html=True)
                 
                 rev_col_a, rev_col_b = st.columns(2)
                 with rev_col_a:
                     st.markdown(f"**RFQ Title:** {st.session_state.rfq_data.get('title')}")
                     st.markdown(f"**Category:** {st.session_state.rfq_data.get('category')}")
-                    st.markdown(f"**Total SKUs / Line Items:** {len(st.session_state.rfq_data.get('line_items', []))}")
+                    st.markdown(f"**Total Line Items:** {len(st.session_state.rfq_data.get('line_items', []))} SKUs")
                     st.markdown(f"**Delivery Locations:** {st.session_state.rfq_data.get('delivery_locations')}")
                     st.markdown(f"**Payment Terms:** {st.session_state.rfq_data.get('payment_terms')}")
                 with rev_col_b:
@@ -1503,12 +1509,18 @@ if st.session_state.stage == "Create RFQ":
                     if st.session_state.rfq_data.get("installation_required"):
                         st.markdown(f"**Installation Scope:** {st.session_state.rfq_data.get('installation_required')}")
 
+                st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Line Items to be Published:</div>", unsafe_allow_html=True)
+                
+                preview_items_df = pd.DataFrame(st.session_state.rfq_data.get("line_items", []))
+                st.dataframe(preview_items_df, use_container_width=True, height=220, hide_index=True)
+
                 tot_budget = sum([it.get('Est Extended Spend', 0.0) for it in st.session_state.rfq_data.get('line_items', [])])
-                st.info(f"💰 **Estimated Target RFQ Budget:** ₹{tot_budget:,.2f} across {len(st.session_state.rfq_data.get('line_items', []))} items.")
+                st.info(f"💰 **Total Target Budget Commitment:** ₹{tot_budget:,.2f} across {len(st.session_state.rfq_data.get('line_items', []))} items.")
 
                 m_btn1, m_btn2 = st.columns([1, 1])
                 with m_btn1:
-                    if st.button("← Back to editing", type="secondary", use_container_width=True):
+                    if st.button("✏ Edit RFQ details", type="secondary", use_container_width=True):
                         st.session_state.show_publish_review_modal = False
                         st.rerun()
                 with m_btn2:
