@@ -93,9 +93,7 @@ st.set_page_config(
 
 st.markdown(f"""
     <style>
-    /* ------------------------------------------------------------------------
-       1. GLOBAL RESETS & TYPOGRAPHY
-       ------------------------------------------------------------------------ */
+    /* 1. GLOBAL RESETS & TYPOGRAPHY */
     .stApp {{
         background-color: {DESIGN_SYSTEM['colors']['bg_app']};
         color: {DESIGN_SYSTEM['colors']['text_primary']};
@@ -104,8 +102,6 @@ st.markdown(f"""
     }}
     
     [data-testid="stSidebar"] {{ display: none; }}
-    
-    /* Hide Streamlit default chrome elements */
     #MainMenu, footer, header {{ visibility: hidden; }}
     .block-container {{
         padding-top: 1rem !important;
@@ -113,9 +109,7 @@ st.markdown(f"""
         max-width: 1400px;
     }}
 
-    /* ------------------------------------------------------------------------
-       2. APP SHELL & PRODUCT HEADER
-       ------------------------------------------------------------------------ */
+    /* 2. APP SHELL & PRODUCT HEADER */
     .aerchain-app-header {{
         background-color: transparent;
         border-bottom: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
@@ -150,9 +144,7 @@ st.markdown(f"""
         gap: 16px;
     }}
 
-    /* ------------------------------------------------------------------------
-       3. WORKFLOW STEPPER BAR
-       ------------------------------------------------------------------------ */
+    /* 3. WORKFLOW STEPPER BAR */
     .workflow-stepper-container {{
         background-color: transparent;
         padding: 0;
@@ -161,9 +153,7 @@ st.markdown(f"""
         padding-bottom: 16px;
     }}
 
-    /* ------------------------------------------------------------------------
-       4. WORKSPACE SECTIONS & SURFACES (CLEANED - NO EMBEDDED BOXED OUTLINES)
-       ------------------------------------------------------------------------ */
+    /* 4. WORKSPACE SECTIONS */
     .aerchain-section {{
         background-color: transparent;
         border: none;
@@ -186,9 +176,7 @@ st.markdown(f"""
         margin: 0 0 16px 0;
     }}
 
-    /* ------------------------------------------------------------------------
-       5. METRIC & KPI CARDS
-       ------------------------------------------------------------------------ */
+    /* 5. METRIC & KPI CARDS */
     .kpi-card {{
         background-color: {DESIGN_SYSTEM['colors']['surface_card']};
         border: 1px solid {DESIGN_SYSTEM['colors']['border_subtle']};
@@ -216,9 +204,7 @@ st.markdown(f"""
         margin-top: 4px;
     }}
 
-    /* ------------------------------------------------------------------------
-       6. BADGES & STATUS INDICATORS
-       ------------------------------------------------------------------------ */
+    /* 6. BADGES */
     .badge-base {{
         display: inline-flex;
         align-items: center;
@@ -234,9 +220,7 @@ st.markdown(f"""
     .badge-danger {{ background-color: {DESIGN_SYSTEM['colors']['status_danger_bg']}; color: {DESIGN_SYSTEM['colors']['status_danger_text']}; border: 1px solid {DESIGN_SYSTEM['colors']['status_danger_border']}; }}
     .badge-neutral {{ background-color: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; }}
 
-    /* ------------------------------------------------------------------------
-       7. BUTTONS & FORM INPUTS
-       ------------------------------------------------------------------------ */
+    /* 7. BUTTONS & INPUTS */
     .stButton button[kind="primary"] {{
         background-color: {DESIGN_SYSTEM['colors']['accent_primary']} !important;
         color: #FFFFFF !important;
@@ -343,6 +327,9 @@ def compute_dataset_fingerprint():
         "freight_terms": st.session_state.rfq_data.get("freight_terms"),
         "iso_mandatory": st.session_state.rfq_data.get("iso_mandatory"),
         "fsc_mandatory": st.session_state.rfq_data.get("fsc_mandatory"),
+        "esg_mandatory": st.session_state.rfq_data.get("esg_mandatory"),
+        "min_capacity": st.session_state.rfq_data.get("min_capacity"),
+        "target_otd": st.session_state.rfq_data.get("target_otd"),
         "defect_limit": st.session_state.rfq_data.get("defect_limit"),
         "response_deadline": st.session_state.rfq_data.get("response_deadline"),
         "line_items": st.session_state.rfq_data.get("line_items")
@@ -467,6 +454,9 @@ def compute_rfq_fingerprint(rfq_dict_or_items):
             "freight_terms": rfq_dict_or_items.get("freight_terms"),
             "iso_mandatory": rfq_dict_or_items.get("iso_mandatory"),
             "fsc_mandatory": rfq_dict_or_items.get("fsc_mandatory"),
+            "esg_mandatory": rfq_dict_or_items.get("esg_mandatory"),
+            "min_capacity": rfq_dict_or_items.get("min_capacity"),
+            "target_otd": rfq_dict_or_items.get("target_otd"),
             "defect_limit": rfq_dict_or_items.get("defect_limit"),
             "response_deadline": rfq_dict_or_items.get("response_deadline")
         }
@@ -546,18 +536,20 @@ def get_questionnaire_master_dataset():
         "Questionnaire Metric": [
             "ISO 9001 Certification Attached?",
             "FSC Certification Attached?",
+            "ESG Audit Certified?",
             "3-Year Reported Defect Rate",
             "Monthly Packaging Capacity",
+            "Historical On-Time Delivery (OTD %)",
             "Offered Payment Terms",
             "Freight Responsibility",
             "GST Registration Verified?",
             "Manufacturing Location"
         ],
-        "Apex Packaging": ["YES", "YES", "0.4%", "1.2M pcs", "Net 60", "Supplier Prepaid (DDP)", "YES", "Bhiwandi, MH"],
-        "BoxCraft Ltd": ["YES", "NO", "0.3%", "900K pcs", "Net 30", "Buyer Collect", "YES", "Pune, MH"],
-        "CorruSeal Global": ["YES", "YES", "0.2%", "1.5M pcs", "Net 60", "Supplier Prepaid (DDP)", "YES", "Chennai, TN"],
-        "National Paper Mills": ["YES", "YES", "0.4%", "1.3M pcs", "Net 30", "Buyer Collect", "YES", "Hosur, TN"],
-        "PackTech Solutions": ["NO", "YES", "2.1% (Exceeds 0.5%)", "1.1M pcs", "Net 45", "Supplier Prepaid (DDP)", "YES", "Bengaluru, KA"]
+        "Apex Packaging": ["YES", "YES", "YES", "0.4%", "1.2M pcs", "98.5%", "Net 60", "Supplier Prepaid (DDP)", "YES", "Bhiwandi, MH"],
+        "BoxCraft Ltd": ["YES", "NO", "YES", "0.3%", "900K pcs", "96.0%", "Net 30", "Buyer Collect", "YES", "Pune, MH"],
+        "CorruSeal Global": ["YES", "YES", "YES", "0.2%", "1.5M pcs", "99.2%", "Net 60", "Supplier Prepaid (DDP)", "YES", "Chennai, TN"],
+        "National Paper Mills": ["YES", "YES", "NO", "0.4%", "1.3M pcs", "94.5%", "Net 30", "Buyer Collect", "YES", "Hosur, TN"],
+        "PackTech Solutions": ["NO", "YES", "NO", "2.1% (Exceeds 0.5%)", "1.1M pcs", "91.0%", "Net 45", "Supplier Prepaid (DDP)", "YES", "Bengaluru, KA"]
     }
     return pd.DataFrame(data)
 
@@ -670,13 +662,25 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     else:
         active_suppliers = [s for s in SUPPLIERS if s in uploaded_suppliers_set]
 
+    # Dynamically extract active qualification criteria from RFQ requirements
+    req_iso = st.session_state.rfq_data.get("iso_mandatory", True) if st.session_state.rfq_data else True
+    req_esg = st.session_state.rfq_data.get("esg_mandatory", False) if st.session_state.rfq_data else False
+    
+    defect_str = st.session_state.rfq_data.get("defect_limit", "< 0.5%") if st.session_state.rfq_data else "< 0.5%"
+    try:
+        max_defect_thresh = float(re.findall(r"[-+]?\d*\.\d+|\d+", str(defect_str))[0])
+    except Exception:
+        max_defect_thresh = 0.5
+
     qualification_status = {}
     for sname in SUPPLIERS:
         if sname in quest_df.columns:
             iso_rows = quest_df.loc[quest_df["Questionnaire Metric"] == "ISO 9001 Certification Attached?", sname].values
+            esg_rows = quest_df.loc[quest_df["Questionnaire Metric"] == "ESG Audit Certified?", sname].values
             defect_rows = quest_df.loc[quest_df["Questionnaire Metric"] == "3-Year Reported Defect Rate", sname].values
             
             iso_val = str(iso_rows[0]).strip().upper() if len(iso_rows) > 0 else "NO"
+            esg_val = str(esg_rows[0]).strip().upper() if len(esg_rows) > 0 else "NO"
             defect_val = defect_rows[0] if len(defect_rows) > 0 else "2.5%"
             
             try:
@@ -684,19 +688,24 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             except Exception:
                 defect_num = 1.0
                 
-            is_iso_valid = (iso_val == "YES")
-            is_defect_valid = (defect_num < 0.5)
-            is_qualified = is_iso_valid and is_defect_valid
+            is_iso_valid = (not req_iso) or (iso_val == "YES")
+            is_esg_valid = (not req_esg) or (esg_val == "YES")
+            is_defect_valid = (defect_num <= max_defect_thresh)
+            
+            is_qualified = is_iso_valid and is_esg_valid and is_defect_valid
             
             reasons = []
-            if not is_iso_valid:
-                reasons.append(f"ISO 9001 status ({iso_val}) does not meet mandatory threshold")
+            if req_iso and not is_iso_valid:
+                reasons.append(f"ISO 9001 missing")
+            if req_esg and not is_esg_valid:
+                reasons.append(f"ESG audit missing")
             if not is_defect_valid:
-                reasons.append(f"Defect rate ({defect_val}) exceeds < 0.5% threshold")
+                reasons.append(f"Defect rate ({defect_val}) exceeds limit ({defect_str})")
                 
             qualification_status[sname] = {
                 "qualified": is_qualified,
                 "iso": iso_val,
+                "esg": esg_val,
                 "defect": defect_val,
                 "reason": "Qualified" if is_qualified else "; ".join(reasons)
             }
@@ -956,7 +965,7 @@ for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
-# STAGE 1: REQUIREMENTS / CREATE RFQ (REDESIGNED STATE WORKFLOW)
+# STAGE 1: REQUIREMENTS / CREATE RFQ
 # =============================================================================
 if st.session_state.stage == "Create RFQ":
     # STATE A: Before "Generate RFQ"
@@ -970,16 +979,16 @@ if st.session_state.stage == "Create RFQ":
                 "Procurement Brief:",
                 value=st.session_state.user_prompt_input,
                 height=120,
-                placeholder="Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities. Include supplier qualification requirements, commercial terms, delivery expectations and applicable certifications..."
+                placeholder="Describe your requirement (e.g., 'Source 10 corrugated packaging SKUs for Bhiwandi warehouse with Net 60 terms and ISO 9001 certification')..."
             )
             
             p_col1, p_col2 = st.columns([1.5, 1])
             with p_col1:
                 if st.button("Generate RFQ draft →", type="primary", use_container_width=True):
                     if not prompt_val.strip():
-                        prompt_val = "Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities. ISO 9001 mandatory, Net 60 payment terms, DDP freight."
+                        prompt_val = "Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities. Include supplier qualification requirements, commercial terms, delivery expectations and applicable certifications."
                     
-                    with st.spinner("Analyzing brief · Extracting specifications · Structuring 30 SKUs..."):
+                    with st.spinner("Analyzing brief · Extracting specifications · Structuring SKU line items..."):
                         sys_gen_prompt = """
                         You are an expert enterprise procurement assistant.
                         Analyze the user prompt and generate a structured RFx JSON proposal.
@@ -989,11 +998,14 @@ if st.session_state.stage == "Create RFQ":
                             "category": "string",
                             "scope": "string",
                             "delivery_locations": "string",
-                            "payment_terms": "string",
-                            "price_validity": "string",
-                            "freight_terms": "string",
+                            "payment_terms": "string (e.g. Net 60 Days, Net 30 Days)",
+                            "price_validity": "string (e.g. 60 Days Mandatory, 90 Days)",
+                            "freight_terms": "string (e.g. Supplier Prepaid (DDP), Ex-Works)",
                             "iso_mandatory": true,
                             "fsc_mandatory": false,
+                            "esg_mandatory": false,
+                            "min_capacity": "1.0M pcs",
+                            "target_otd": "95.0%",
                             "defect_limit": "< 0.5%",
                             "response_deadline": "string",
                             "unclear_specs": [
@@ -1012,7 +1024,9 @@ if st.session_state.stage == "Create RFQ":
                                 }
                             ]
                         }
-                        Generate exactly 30 realistic corrugated packaging line items if requested.
+                        CRITICAL INSTRUCTION FOR LINE ITEMS:
+                        Extract the line item count explicitly requested in the brief (e.g., if user asks for 5 SKUs, generate 5 line items; if 10 SKUs, generate 10). If no count is mentioned, generate 30 items.
+                        Always ensure every line item has a valid non-empty UOM (options: 'pcs', 'kg', 'box', 'set').
                         """
                         try:
                             res = client.models.generate_content(
@@ -1028,29 +1042,36 @@ if st.session_state.stage == "Create RFQ":
                             
                             raw_items = parsed.get("line_items", [])
                             valid_items = []
-                            for it in raw_items:
+                            for idx, it in enumerate(raw_items, start=1):
                                 q_num = parse_safe_numeric_price(it.get("Quantity"))
-                                if q_num and q_num > 0 and it.get("Line #") and it.get("Description"):
+                                uom_val = str(it.get("UOM", "pcs")).lower().strip()
+                                if uom_val not in ["pcs", "kg", "box", "set"]:
+                                    uom_val = "pcs"
+                                    
+                                if q_num and q_num > 0 and it.get("Description"):
+                                    it["Line #"] = f"ITEM-{idx:03d}"
                                     it["Quantity"] = int(q_num)
+                                    it["UOM"] = uom_val
+                                    it["Provenance"] = it.get("Provenance", "✦ AI suggested")
                                     valid_items.append(it)
                                     
-                            if len(valid_items) == 30:
+                            if len(valid_items) > 0:
                                 new_rfq = {
                                     "title": parsed.get("title", "Corrugated Packaging Sourcing 2026"),
                                     "category": parsed.get("category", "Packaging Materials"),
-                                    "scope": parsed.get("scope", "Procurement of 30 corrugated box SKUs."),
+                                    "scope": parsed.get("scope", f"Procurement of {len(valid_items)} corrugated box SKUs."),
                                     "delivery_locations": parsed.get("delivery_locations", "Bhiwandi Warehouse & Hosur Facility"),
                                     "payment_terms": parsed.get("payment_terms", "Net 60 Days"),
                                     "price_validity": parsed.get("price_validity", "60 Days Mandatory"),
                                     "freight_terms": parsed.get("freight_terms", "Supplier Prepaid (DDP)"),
                                     "iso_mandatory": parsed.get("iso_mandatory", True),
                                     "fsc_mandatory": parsed.get("fsc_mandatory", False),
+                                    "esg_mandatory": parsed.get("esg_mandatory", False),
+                                    "min_capacity": parsed.get("min_capacity", "1.0M pcs"),
+                                    "target_otd": parsed.get("target_otd", "95.0%"),
                                     "defect_limit": parsed.get("defect_limit", "< 0.5%"),
                                     "response_deadline": parsed.get("response_deadline", "15 Oct 2026"),
-                                    "unclear_specs": parsed.get("unclear_specs", [
-                                        {"requirement": "Price Validity", "finding": "Not specified in brief", "action": "Suggested: 60 days"},
-                                        {"requirement": "Peak-season buffer", "finding": "Not specified in brief", "action": "Add requirement"}
-                                    ]),
+                                    "unclear_specs": parsed.get("unclear_specs", []),
                                     "line_items": valid_items
                                 }
                                 new_rfq["rfq_fingerprint"] = compute_rfq_fingerprint(new_rfq)
@@ -1073,10 +1094,12 @@ if st.session_state.stage == "Create RFQ":
                                 "freight_terms": "Supplier Prepaid (DDP)",
                                 "iso_mandatory": True,
                                 "fsc_mandatory": False,
+                                "esg_mandatory": False,
+                                "min_capacity": "1.0M pcs",
+                                "target_otd": "95.0%",
                                 "defect_limit": "< 0.5%",
                                 "response_deadline": "15 Oct 2026",
                                 "unclear_specs": [
-                                    {"requirement": "Price Validity", "finding": "Not specified in brief", "action": "Suggested: 60 days"},
                                     {"requirement": "Peak-season buffer", "finding": "Not specified in brief", "action": "Add requirement"}
                                 ],
                                 "line_items": canon_items
@@ -1094,7 +1117,7 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
             st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#475569; margin-bottom:6px;'>WHAT AI WILL GENERATE:</div>", unsafe_allow_html=True)
-            st.markdown("<div style='font-size:0.82rem; color:#64748B;'>Scope Overview &nbsp;•&nbsp; 30 SKU Line Items &nbsp;•&nbsp; Qualification Requirements &nbsp;•&nbsp; Commercial Terms &nbsp;•&nbsp; Delivery Parameters</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:0.82rem; color:#64748B;'>Custom Scope Overview &nbsp;•&nbsp; SKU Line Items & Specs &nbsp;•&nbsp; Commercial & Qualification Criteria &nbsp;•&nbsp; Delivery Parameters</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
     # STATE B: After "Generate RFQ"
@@ -1110,37 +1133,17 @@ if st.session_state.stage == "Create RFQ":
             with ov1:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Scope</div><div class='kpi-value'>{len(st.session_state.rfq_data['line_items'])} SKUs</div></div>", unsafe_allow_html=True)
             with ov2:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Locations</div><div class='kpi-value' style='font-size:1.0rem;'>Bhiwandi & Hosur</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Locations</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data['delivery_locations']}</div></div>", unsafe_allow_html=True)
             with ov3:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Deadline</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['response_deadline']}</div></div>", unsafe_allow_html=True)
             with ov4:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Payment</div><div class='kpi-value' style='font-size:1.1rem;'>{st.session_state.rfq_data['payment_terms']}</div></div>", unsafe_allow_html=True)
             with ov5:
-                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Freight</div><div class='kpi-value' style='font-size:1.0rem;'>DDP / Prepaid</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Freight</div><div class='kpi-value' style='font-size:1.0rem;'>{st.session_state.rfq_data['freight_terms']}</div></div>", unsafe_allow_html=True)
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # "Review Before Publishing" Hero AI Section (Only renders when unclear_specs exist)
-        if st.session_state.rfq_data.get("unclear_specs"):
-            with st.container():
-                st.markdown("<div class='aerchain-section' style='border: 1px solid #FEF08A; background-color: #FFFBEB; padding: 16px; border-radius: 6px;'>", unsafe_allow_html=True)
-                st.markdown("<div class='section-header-title' style='color:#B45309;'>Review Before Publishing</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='section-header-subtitle' style='color:#B45309;'>{len(st.session_state.rfq_data['unclear_specs'])} requirements need your input. AI found requirements that were not explicitly defined in your brief.</div>", unsafe_allow_html=True)
-                
-                for idx, spec in enumerate(st.session_state.rfq_data["unclear_specs"]):
-                    c_spec1, c_spec2, c_spec3 = st.columns([2, 3, 1])
-                    with c_spec1:
-                        st.markdown(f"**{spec.get('requirement', 'Requirement')}**")
-                    with c_spec2:
-                        st.markdown(f"{spec.get('finding', 'Not specified')} → *{spec.get('action', 'Action required')}*")
-                    with c_spec3:
-                        if st.button(f"Confirm", key=f"confirm_spec_{idx}", type="secondary", use_container_width=True):
-                            st.session_state.rfq_data["unclear_specs"].pop(idx)
-                            st.rerun()
-                            
-                st.markdown("</div>", unsafe_allow_html=True)
-
-        # Commercial & Qualification Requirements
+        # Commercial & Qualification Requirements (Dropdown UI Controls)
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
             st.markdown("<div class='section-header-title'>Commercial & Qualification Requirements</div>", unsafe_allow_html=True)
@@ -1148,29 +1151,91 @@ if st.session_state.stage == "Create RFQ":
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Commercial Terms</div>", unsafe_allow_html=True)
-                pay_terms = st.text_input("Payment terms:", value=st.session_state.rfq_data.get("payment_terms", "Net 60 Days"))
-                st.session_state.rfq_data["payment_terms"] = pay_terms
-                p_val = st.text_input("Price validity:", value=st.session_state.rfq_data.get("price_validity", "60 Days Mandatory"))
-                st.session_state.rfq_data["price_validity"] = p_val
-                fr_terms = st.text_input("Freight terms:", value=st.session_state.rfq_data.get("freight_terms", "Supplier Prepaid (DDP)"))
-                st.session_state.rfq_data["freight_terms"] = fr_terms
+                
+                pay_opts = ["Net 60 Days", "Net 30 Days", "Net 90 Days", "Advance Payment"]
+                curr_pay = st.session_state.rfq_data.get("payment_terms", "Net 60 Days")
+                pay_idx = pay_opts.index(curr_pay) if curr_pay in pay_opts else 0
+                selected_pay = st.selectbox("Payment terms:", options=pay_opts, index=pay_idx)
+                
+                val_opts = ["60 Days Mandatory", "30 Days", "90 Days"]
+                curr_val = st.session_state.rfq_data.get("price_validity", "60 Days Mandatory")
+                val_idx = val_opts.index(curr_val) if curr_val in val_opts else 0
+                selected_val = st.selectbox("Price validity:", options=val_opts, index=val_idx)
+                
+                fr_opts = ["Supplier Prepaid (DDP)", "Ex-Works", "FOB Destination"]
+                curr_fr = st.session_state.rfq_data.get("freight_terms", "Supplier Prepaid (DDP)")
+                fr_idx = fr_opts.index(curr_fr) if curr_fr in fr_opts else 0
+                selected_fr = st.selectbox("Freight terms:", options=fr_opts, index=fr_idx)
+                
+                # Update session state with selected commercial values
+                st.session_state.rfq_data["payment_terms"] = selected_pay
+                st.session_state.rfq_data["price_validity"] = selected_val
+                st.session_state.rfq_data["freight_terms"] = selected_fr
 
             with c2:
-                st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Supplier Qualification</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:0.85rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Supplier Qualification & Analyst Controls</div>", unsafe_allow_html=True)
+                
                 iso_m = st.toggle("ISO 9001 certification mandatory", value=st.session_state.rfq_data.get("iso_mandatory", True))
-                st.session_state.rfq_data["iso_mandatory"] = iso_m
+                esg_m = st.toggle("ESG audit certification mandatory", value=st.session_state.rfq_data.get("esg_mandatory", False))
                 fsc_m = st.toggle("FSC certification mandatory", value=st.session_state.rfq_data.get("fsc_mandatory", False))
+                
+                q_sub1, q_sub2 = st.columns(2)
+                with q_sub1:
+                    def_opts = ["< 0.5%", "< 1.0%", "< 0.2%"]
+                    curr_def = st.session_state.rfq_data.get("defect_limit", "< 0.5%")
+                    def_idx = def_opts.index(curr_def) if curr_def in def_opts else 0
+                    selected_def = st.selectbox("Max defect rate limit:", options=def_opts, index=def_idx)
+                with q_sub2:
+                    otd_opts = ["95.0%", "98.0%", "90.0%"]
+                    curr_otd = st.session_state.rfq_data.get("target_otd", "95.0%")
+                    otd_idx = otd_opts.index(curr_otd) if curr_otd in otd_opts else 0
+                    selected_otd = st.selectbox("Min target OTD %:", options=otd_opts, index=otd_idx)
+                
+                st.session_state.rfq_data["iso_mandatory"] = iso_m
+                st.session_state.rfq_data["esg_mandatory"] = esg_m
                 st.session_state.rfq_data["fsc_mandatory"] = fsc_m
-                def_lim = st.text_input("Defect rate limit:", value=st.session_state.rfq_data.get("defect_limit", "< 0.5%"))
-                st.session_state.rfq_data["defect_limit"] = def_lim
+                st.session_state.rfq_data["defect_limit"] = selected_def
+                st.session_state.rfq_data["target_otd"] = selected_otd
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Line Items Editor
+        # Dynamic Deduplicated "Review Before Publishing" Drawer
+        # Automatically filter out requirements that are explicitly confirmed in the form fields above
+        active_unclear = []
+        for spec in st.session_state.rfq_data.get("unclear_specs", []):
+            req_name = spec.get("requirement", "").lower()
+            if "validity" in req_name and st.session_state.rfq_data.get("price_validity"):
+                continue
+            if "payment" in req_name and st.session_state.rfq_data.get("payment_terms"):
+                continue
+            if "freight" in req_name and st.session_state.rfq_data.get("freight_terms"):
+                continue
+            active_unclear.append(spec)
+
+        if active_unclear:
+            with st.container():
+                st.markdown("<div class='aerchain-section' style='border: 1px solid #FEF08A; background-color: #FFFBEB; padding: 16px; border-radius: 6px;'>", unsafe_allow_html=True)
+                st.markdown("<div class='section-header-title' style='color:#B45309;'>Review Before Publishing</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='section-header-subtitle' style='color:#B45309;'>{len(active_unclear)} item(s) need your confirmation before publishing. AI flagged ambiguous brief parameters.</div>", unsafe_allow_html=True)
+                
+                for idx, spec in enumerate(active_unclear):
+                    c_spec1, c_spec2, c_spec3 = st.columns([2, 3, 1])
+                    with c_spec1:
+                        st.markdown(f"**{spec.get('requirement', 'Requirement')}**")
+                    with c_spec2:
+                        st.markdown(f"{spec.get('finding', 'Not specified')} → *{spec.get('action', 'Action required')}*")
+                    with c_spec3:
+                        if st.button(f"Confirm", key=f"confirm_spec_{idx}", type="secondary", use_container_width=True):
+                            st.session_state.rfq_data["unclear_specs"] = [s for s in st.session_state.rfq_data["unclear_specs"] if s.get("requirement") != spec.get("requirement")]
+                            st.rerun()
+                            
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        # Line Items Editor (Fully Visible Table with Instant Propagation)
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
             st.markdown(f"<div class='section-header-title'>Line Items ({len(st.session_state.rfq_data['line_items'])} SKUs)</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-header-subtitle'>Review and edit quantities, UOMs, specifications and target delivery locations before publishing.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-subtitle'>Review and edit quantities, UOMs, specifications and target delivery locations. Updates reflect immediately across analysis matrixes.</div>", unsafe_allow_html=True)
             
             items_df = pd.DataFrame(st.session_state.rfq_data["line_items"])
             
@@ -1180,12 +1245,12 @@ if st.session_state.stage == "Create RFQ":
                 height=380,
                 hide_index=True,
                 column_config={
-                    "Line #": st.column_config.TextColumn("Line #", disabled=True, width="medium"),
-                    "Description": st.column_config.TextColumn("Description", width="large"),
-                    "Quantity": st.column_config.NumberColumn("Quantity", format="%d", min_value=1, width="medium"),
+                    "Line #": st.column_config.TextColumn("Line #", disabled=True, width="small"),
+                    "Description": st.column_config.TextColumn("Description", width="medium"),
+                    "Quantity": st.column_config.NumberColumn("Quantity", format="%d", min_value=1, width="small"),
                     "UOM": st.column_config.SelectboxColumn("UOM", options=["pcs", "kg", "box", "set"], width="small"),
-                    "Specification": st.column_config.TextColumn("Specification", width="large"),
-                    "Delivery Location": st.column_config.TextColumn("Delivery Location", width="medium"),
+                    "Specification": st.column_config.TextColumn("Specification", width="medium"),
+                    "Delivery Location": st.column_config.TextColumn("Delivery Location", width="small"),
                     "Provenance": st.column_config.TextColumn("Origin", disabled=True, width="small")
                 }
             )
@@ -1208,12 +1273,13 @@ if st.session_state.stage == "Create RFQ":
             f1, f2, f3 = st.columns([2, 1, 1])
             with f2:
                 if st.button("Save draft", type="secondary", use_container_width=True):
-                    st.session_state.rfq_status = "Draft saved"
-                    st.success("Draft saved successfully.")
+                    st.session_state.rfq_status = "Draft (Saved)"
+                    st.toast("✓ RFQ draft saved successfully! All updates preserved.", icon="💾")
             with f3:
                 if st.button("Publish RFQ →", type="primary", disabled=has_invalid_qty, use_container_width=True):
                     st.session_state.rfq_status = "Published"
                     st.session_state.responses_unlocked = True
+                    st.toast("✓ RFQ Successfully Published! Unlocking Supplier Responses...", icon="🚀")
                     st.session_state.stage = "Supplier Responses"
                     st.rerun()
 
@@ -1498,7 +1564,6 @@ elif st.session_state.stage == "Supplier Responses":
             
             extracted_total = len(review_table)
             
-            # Interactive Document Inspector Table View
             st.dataframe(
                 pd.DataFrame(review_table)[["Line #", "Original Quote", "Normalized INR", "How it was normalized", "Source", "Extraction confidence", "Validation Status"]],
                 use_container_width=True,
@@ -1506,7 +1571,6 @@ elif st.session_state.stage == "Supplier Responses":
                 hide_index=True
             )
             
-            # Side-by-Side Document Source Inspector Popover
             with st.popover("Inspect Raw Document Snippets & Provenance Evidence"):
                 st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Document Provenance Inspector</div>", unsafe_allow_html=True)
                 st.caption(f"Verbatim text excerpts parsed from `{st.session_state.pending_extraction['file_name']}` for {sname}")
@@ -1520,7 +1584,6 @@ elif st.session_state.stage == "Supplier Responses":
                             st.code(row_entry['Verbatim Snippet'], language="text")
 
             st.caption(f"Extraction Summary: **{extracted_total} extracted** · **{validated_count} validated** · **{needs_review_count} require review** · **{rejected_count} rejected**")
-            st.caption("ℹ Review-required values remain visible but are excluded from sourcing calculations until validated.")
             
             rev_col1, rev_col2 = st.columns([1.5, 1])
             with rev_col1:
@@ -1534,7 +1597,6 @@ elif st.session_state.stage == "Supplier Responses":
                     source_col = meta["source_col"]
                     snippet_col = meta["snippet_col"]
                     
-                    # QUOTE REPLACEMENT: Wipe previous supplier entries to prevent stale line leakage
                     st.session_state.master_matrix[norm_col] = None
                     st.session_state.master_matrix[orig_col] = "NOT QUOTED"
                     st.session_state.master_matrix[status_col] = "MISSING"
@@ -1675,7 +1737,7 @@ elif st.session_state.stage == "Compare Bids":
     # Matrix Section
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        tab_comp1, tab_comp2 = st.tabs(["Price comparison matrix", "Qualification checks"])
+        tab_comp1, tab_comp2 = st.tabs(["Price comparison matrix", "Qualification & Analyst Checks"])
         
         with tab_comp1:
             m_col1, m_col2 = st.columns([2, 1])
@@ -1698,7 +1760,6 @@ elif st.session_state.stage == "Compare Bids":
                 col_rename_map[SUPPLIER_MAP[sname]["norm_col"]] = SUPPLIER_MAP[sname]["prefix"].upper()
             matrix_display = matrix_display.rename(columns=col_rename_map)
 
-            # Metadata Header Bar for Supplier Columns
             if calc["active_suppliers"]:
                 meta_cols = st.columns([1, 2.5, 0.8, 0.8] + [1.5] * len(calc["active_suppliers"]))
                 for idx, sname in enumerate(calc["active_suppliers"]):
@@ -1749,7 +1810,6 @@ elif st.session_state.stage == "Compare Bids":
             styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
             st.dataframe(styled_matrix, use_container_width=True, height=380, hide_index=True)
             
-            # Side-by-Side Provenance & Document Snippet Inspector Popover
             with st.popover("Inspect Document Evidence & Provenance Side-by-Side"):
                 st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Line-Item Document Evidence Inspector</div>", unsafe_allow_html=True)
                 st.caption("Verbatim source excerpts and extraction confidence for all active supplier quotes")
@@ -1785,19 +1845,22 @@ elif st.session_state.stage == "Compare Bids":
                 <span>— Missing / unquoted</span>
             </div>
             """, unsafe_allow_html=True)
-            st.caption("Normalization: USD → INR at ₹83.50/USD · Quoted prices normalized to requested UOM. Review-required values are displayed for visibility but excluded from sourcing calculations.")
 
         with tab_comp2:
-            st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:4px;'>Qualification Checks Evaluation</div>", unsafe_allow_html=True)
-            st.caption("Mandatory Criteria: ISO 9001 certification required AND 3-year reported defect rate < 0.5%")
+            st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:4px;'>Qualification & Compliance Matrix</div>", unsafe_allow_html=True)
+            st.caption("Evaluates active ISO, ESG, FSC, OTD % and Defect Rate constraints dynamically.")
             
             qual_summary = []
             for sname in calc["active_suppliers"]:
                 q_info = calc["qualification_status"][sname]
+                otd_val = st.session_state.questionnaire_matrix.loc[st.session_state.questionnaire_matrix["Questionnaire Metric"] == "Historical On-Time Delivery (OTD %)", sname].values[0] if sname in st.session_state.questionnaire_matrix.columns else "N/A"
+                
                 qual_summary.append({
                     "Supplier": sname,
                     "ISO 9001": q_info["iso"],
+                    "ESG Audit": q_info["esg"],
                     "3-Year Defect Rate": q_info["defect"],
+                    "Historical OTD %": otd_val,
                     "Qualification": "Qualified" if q_info["qualified"] else "Disqualified",
                     "Reason / Evaluation": q_info["reason"]
                 })
@@ -2089,7 +2152,7 @@ elif st.session_state.stage == "Analyze & Decide":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 7. Collapsible Executive Drawers (Trade-offs, Data Gaps, Methodology, Audit Trail)
+    # 7. Collapsible Executive Drawers
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Methodology, Assumptions & Audit Trail</div>", unsafe_allow_html=True)
@@ -2116,7 +2179,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 st.markdown("**INCLUDED IN THIS CALCULATION:**")
                 st.markdown("✓ Normalized unit prices (INR / requested UOM)")
                 st.markdown("✓ Requested RFQ quantities & SKU specs")
-                st.markdown("✓ Mandatory qualification status (ISO 9001 + Defect rate)")
+                st.markdown("✓ Mandatory qualification status (ISO 9001 + Defect rate + ESG)")
                 st.markdown("✓ Usable quote coverage")
             with m_c2:
                 st.markdown("**EXCLUDED FROM THIS CALCULATION:**")
@@ -2126,7 +2189,7 @@ elif st.session_state.stage == "Analyze & Decide":
                 st.markdown("— Capacity sufficiency over fulfillment period")
 
         with st.expander("Evidence & Audit Trail Export"):
-            st.markdown("150 supplier-line records available for audit export. Exports include original quote, normalized price, validation status, extraction confidence, source reference, and RFQ fingerprint.")
+            st.markdown("Supplier-line records available for audit export. Exports include original quote, normalized price, validation status, extraction confidence, source reference, and RFQ fingerprint.")
             
             current_rfq_fp = st.session_state.rfq_data.get("rfq_fingerprint", "N/A") if st.session_state.rfq_data else "N/A"
             audit_export_rows = []
