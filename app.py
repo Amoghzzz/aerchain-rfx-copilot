@@ -658,7 +658,6 @@ def get_questionnaire_master_dataset():
     active_sups = get_active_suppliers()
     category = st.session_state.rfq_data.get("category", "Packaging Materials") if st.session_state.get("rfq_data") else "Packaging Materials"
 
-    # Contextual dynamic attributes per supplier
     dynamic_pay_terms = ["Net 60 Days", "Net 30 Days", "30% Advance, 70% Post-Installation", "Net 45 Days", "Net 30 Days"]
     dynamic_capacities = ["1.5M units", "800k units", "2.1M units", "1.1M units", "900k units"] if "Packaging" in category else ["800 units/mo", "500 units/mo", "1,200 units/mo", "650 units/mo", "400 units/mo"]
     
@@ -716,7 +715,7 @@ if "uploaded_suppliers" not in st.session_state:
     st.session_state.uploaded_suppliers = set()
 
 if "supplier_meta" not in st.session_state:
-    st.session_state.supplier_meta = {}  # Metadata map storing source, filename, confidence per supplier
+    st.session_state.supplier_meta = {}
 
 if "supplier_quote_fingerprints" not in st.session_state:
     st.session_state.supplier_quote_fingerprints = {}
@@ -753,20 +752,6 @@ if "exception_filter" not in st.session_state:
 
 if "user_prompt_input" not in st.session_state:
     st.session_state.user_prompt_input = ""
-
-def rfq_matches_demo_baseline():
-    if st.session_state.rfq_data is None:
-        return False
-    canonical_df = pd.DataFrame(get_canonical_30_items())
-    current_df = pd.DataFrame(st.session_state.rfq_data["line_items"])
-    compare_cols = ["Line #", "Description", "Quantity", "UOM", "Specification", "Delivery Location"]
-    
-    if not all(col in current_df.columns for col in compare_cols):
-        return False
-        
-    return canonical_df[compare_cols].fillna("").astype(str).equals(
-        current_df[compare_cols].fillna("").astype(str)
-    )
 
 def sync_rfq_to_master_matrix():
     if st.session_state.rfq_data is None:
@@ -853,18 +838,12 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             }
 
     supplier_totals = {}
-    missing_line_count = 0
-    data_quality_count = 0
     stale_quote_suppliers = set()
-    exception_line_numbers = set()
-    dynamic_issue_descriptions = []
-    exception_work_queue = []
 
     for sname in uploaded_suppliers_set:
         quote_fp = st.session_state.supplier_quote_fingerprints.get(sname, "")
         if quote_fp and quote_fp != current_rfq_fp:
             stale_quote_suppliers.add(sname)
-            dynamic_issue_descriptions.append(f"**{sname}:** Quote predates updated RFQ requirements (STALE — REVALIDATION REQUIRED).")
 
     for sname in active_eval_suppliers:
         meta = sup_map[sname]
@@ -934,8 +913,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
     split_allocation = []
     split_total = 0.0
     unassigned_count = 0
-    supplier_allocated_counts = {sname: 0 for sname in active_eval_suppliers if qualification_status[sname]["qualified"]}
-    supplier_allocated_spends = {sname: 0.0 for sname in active_eval_suppliers if qualification_status[sname]["qualified"]}
     
     for idx, row in df.iterrows():
         prices = {}
@@ -949,8 +926,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             cheapest_supplier = min(prices, key=prices.get)
             cheapest_unit_price = prices[cheapest_supplier]
             line_total = cheapest_unit_price * row["Quantity"]
-            supplier_allocated_counts[cheapest_supplier] += 1
-            supplier_allocated_spends[cheapest_supplier] += line_total
         else:
             cheapest_supplier = "Unassigned"
             cheapest_unit_price = 0.0
@@ -985,15 +960,7 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
         "price_diff": price_diff,
         "price_diff_pct": price_diff_pct,
         "split_allocation": pd.DataFrame(split_allocation),
-        "supplier_allocated_counts": supplier_allocated_counts,
-        "supplier_allocated_spends": supplier_allocated_spends,
         "unassigned_count": unassigned_count,
-        "missing_line_count": missing_line_count,
-        "data_quality_count": data_quality_count,
-        "total_line_exceptions": len(exception_line_numbers),
-        "exception_line_numbers": sorted(list(exception_line_numbers)),
-        "exception_work_queue": pd.DataFrame(exception_work_queue),
-        "dynamic_issue_descriptions": dynamic_issue_descriptions,
         "total_qualified_suppliers": total_qualified_suppliers,
         "total_disqualified_suppliers": total_disqualified_suppliers
     }
@@ -1031,7 +998,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Navigation Guard Notice
 if st.session_state.pending_extraction:
     pending_vendor = st.session_state.pending_extraction.get("supplier", "Vendor")
     st.warning(f"⚠️ **Pending Extraction Review:** Extracted quote data for **{pending_vendor}** has not yet been added to the comparison matrix. Please apply or discard the extracted quote below before proceeding.")
@@ -1078,11 +1044,14 @@ if st.session_state.stage == "Create RFQ":
             st.markdown("<div class='section-header-title'>Turn a sourcing requirement into a structured RFQ</div>", unsafe_allow_html=True)
             st.markdown("<div class='section-header-subtitle'>Describe what you're buying, where it is needed, quantities, delivery expectations and any commercial constraints. AI will turn this into an editable RFQ draft.</div>", unsafe_allow_html=True)
 
+            # Bind directly to text area key so updates reflect immediately
+            if "procurement_brief_textarea" not in st.session_state:
+                st.session_state.procurement_brief_textarea = st.session_state.user_prompt_input
+
             prompt_val = st.text_area(
                 "Procurement Brief:",
-                value=st.session_state.user_prompt_input,
-                height=120,
                 key="procurement_brief_textarea",
+                height=120,
                 placeholder="Describe your requirement (e.g., 'Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities' or 'Create an RFQ for office furniture across 3 locations')..."
             )
             st.session_state.user_prompt_input = prompt_val
@@ -1134,21 +1103,24 @@ if st.session_state.stage == "Create RFQ":
                         scroll_to_top()
                         st.rerun()
 
-            # "Try Brief" buttons now fill text area and allow user to review before generating
+            # "Try Brief" buttons directly populate text area widget key
             with p_col2:
                 if st.button("Try 30-SKU Packaging Brief", type="secondary", use_container_width=True):
-                    st.session_state.user_prompt_input = "Source 30 corrugated packaging box SKUs for Bhiwandi and Hosur logistics facilities with Net 60 payment terms, 60 days price validity, and ISO 9001 mandatory certification."
+                    st.session_state.procurement_brief_textarea = "Source 30 corrugated packaging box SKUs for Bhiwandi and Hosur logistics facilities with Net 60 payment terms, 60 days price validity, and ISO 9001 mandatory certification."
+                    st.session_state.user_prompt_input = st.session_state.procurement_brief_textarea
                     scroll_to_top()
                     st.rerun()
 
             with p_col3:
                 if st.button("Try Furniture Brief", type="secondary", use_container_width=True):
-                    st.session_state.user_prompt_input = "Create an RFQ for executive office furniture, modular workstations, and ergonomic mesh chairs across Corporate HQ, Pune Tech Hub, and regional branch with 3-year comprehensive warranty."
+                    st.session_state.procurement_brief_textarea = "Create an RFQ for executive office furniture, modular workstations, and ergonomic mesh chairs across Corporate HQ, Pune Tech Hub, and regional branch with 3-year comprehensive warranty."
+                    st.session_state.user_prompt_input = st.session_state.procurement_brief_textarea
                     scroll_to_top()
                     st.rerun()
 
             with p_col4:
                 if st.button("🔄 Reset prompt", type="secondary", use_container_width=True):
+                    st.session_state.procurement_brief_textarea = ""
                     st.session_state.user_prompt_input = ""
                     st.rerun()
 
