@@ -768,17 +768,14 @@ if "last_analysis_query" not in st.session_state:
 if "last_analysis_result" not in st.session_state:
     st.session_state.last_analysis_result = None
 
-if "last_analysis_context" not in st.session_state:
-    st.session_state.last_analysis_context = None
+if "active_copilot_query" not in st.session_state:
+    st.session_state.active_copilot_query = ""
 
 if "master_matrix" not in st.session_state:
     st.session_state.master_matrix = get_supplier_prefabricated_dataset()
 
 if "questionnaire_matrix" not in st.session_state:
     st.session_state.questionnaire_matrix = get_questionnaire_master_dataset()
-
-if "uploaded_docs_log" not in st.session_state:
-    st.session_state.uploaded_docs_log = []
 
 if "pending_extraction" not in st.session_state:
     st.session_state.pending_extraction = None
@@ -796,6 +793,7 @@ def reset_rfq_session():
     st.session_state.rfq_data = None
     st.session_state.rfq_status = "Draft"
     st.session_state.user_prompt_input = ""
+    st.session_state.active_copilot_query = ""
     if "procurement_brief_textarea" in st.session_state:
         del st.session_state["procurement_brief_textarea"]
     st.session_state.responses_unlocked = False
@@ -810,6 +808,46 @@ def reset_rfq_session():
     invalidate_analysis_snapshot()
 
 sync_rfq_to_master_matrix()
+
+# DIRECT AI CO-PILOT EXECUTION
+def run_copilot_direct_analysis(query_text, calc_engine):
+    matrix_json = st.session_state.master_matrix.to_json(orient="records")
+    q_json = st.session_state.questionnaire_matrix.to_json(orient="records")
+    current_cat = st.session_state.rfq_data.get("category", "Packaging Materials") if st.session_state.rfq_data else "Packaging Materials"
+
+    system_instruction = f"""
+    You are an executive procurement intelligence model.
+    Answer the SPECIFIC user question: '{query_text}' for category '{current_cat}'.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Do NOT return standard static text. 
+    2. Directly address the user query with numerical facts and vendor names.
+    3. Output MUST be structured strictly as JSON.
+    
+    JSON OUTPUT SCHEME:
+    {{
+        "headline_answer": "Direct single-sentence answer with exact metrics.",
+        "executive_summary": "1-2 brief bullet points.",
+        "key_findings": ["Finding 1 with exact numbers", "Finding 2"],
+        "trade_offs_and_risks": ["Operational risk 1", "Risk 2"],
+        "recommended_action": "Clear actionable step."
+    }}
+    """
+    try:
+        res = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"Master Matrix:\n{matrix_json}\n\nQuestionnaire:\n{q_json}\n\nUser Question: {query_text}",
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        parsed = extract_json_from_response(res.text)
+        st.session_state.last_analysis_query = query_text
+        st.session_state.last_analysis_result = parsed
+    except Exception as e:
+        st.error(f"Co-Pilot Execution Error: {str(e)}")
 
 # =============================================================================
 # DYNAMIC RULE-BASED QUALIFICATION & QUALIFIED-ONLY SPEND ENGINE
@@ -901,7 +939,6 @@ def calculate_deterministic_spend_engine(df, quest_df, uploaded_suppliers_set, i
             "status_col": status_col
         }
 
-    # Strict Filtering: Only Qualified Vendors can win line awards
     qualified_complete = {
         k: v["total_spend"] for k, v in supplier_totals.items() 
         if v["qualified"] and v["is_complete"]
@@ -1018,10 +1055,15 @@ if st.session_state.pending_extraction:
     pending_vendor = st.session_state.pending_extraction.get("supplier", "Vendor")
     st.warning(f"⚠️ **Pending Extraction Review:** Extracted quote data for **{pending_vendor}** has not yet been added to the comparison matrix. Please apply or discard the extracted quote below before proceeding.")
 
+# STRICT GATEKEEPER CONDITION
+is_compare_eligible = st.session_state.responses_unlocked and (
+    st.session_state.demo_mode or len(st.session_state.uploaded_suppliers) > 0
+)
+
 stages = [
     ("Create RFQ", "01 Create RFQ", True),
     ("Supplier Responses", "02 Response Audit & Ingestion Workspace", st.session_state.responses_unlocked),
-    ("Compare & Decide", "03 Compare & Decide Workspace", st.session_state.compare_unlocked and not st.session_state.pending_extraction)
+    ("Compare & Decide", "03 Compare & Decide Workspace", is_compare_eligible and not st.session_state.pending_extraction)
 ]
 cur_idx = [s[0] for s in stages].index(st.session_state.stage)
 
@@ -1303,11 +1345,25 @@ if st.session_state.stage == "Create RFQ":
             st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
-# STAGE 2: HIGH-VALUE RESPONSE AUDIT & INGESTION WORKSPACE
+# STAGE 2: RESPONSE AUDIT & INGESTION (PROMINENT DEMO TOGGLE)
 # =============================================================================
 elif st.session_state.stage == "Supplier Responses":
     active_sups = get_active_suppliers()
     sup_map = get_supplier_mapping(active_sups)
+
+    # STANDALONE DEMO MODE CONTROL BAR AT TOP OF PAGE 2
+    with st.container():
+        st.markdown("<div class='aerchain-section' style='padding: 12px; background-color: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; margin-bottom:16px;'>", unsafe_allow_html=True)
+        tb1, tb2 = st.columns([3, 1])
+        with tb1:
+            st.markdown("**🔧 Environment Controls:** Choose between simulated supplier proposals or live document extraction.")
+        with tb2:
+            demo_state_toggle = st.toggle("Include demo baseline data", value=st.session_state.demo_mode, key="page2_demo_mode_toggle_bar")
+            if demo_state_toggle != st.session_state.demo_mode:
+                st.session_state.demo_mode = demo_state_toggle
+                invalidate_analysis_snapshot()
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     calc = calculate_deterministic_spend_engine(
         st.session_state.master_matrix,
@@ -1335,7 +1391,6 @@ elif st.session_state.stage == "Supplier Responses":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # PAGE 2 HIGH-VALUE SUB-TABS (Conversion Audit & Commercial Risk)
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         t_ingest, t_audit, t_risk = st.tabs([
@@ -1420,10 +1475,52 @@ elif st.session_state.stage == "Supplier Responses":
                             status_placeholder.empty()
                             st.error(f"Extraction failed: {str(e)}")
 
+            if st.session_state.pending_extraction:
+                p_data = st.session_state.pending_extraction["parsed"]
+                sname = st.session_state.pending_extraction['supplier']
+                
+                st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.0rem; font-weight:600; color:#0F172A;'>Review Extracted Quote: {sname}</div>", unsafe_allow_html=True)
+                
+                review_table = []
+                for item in p_data.get("extracted_prices", []):
+                    lnum = item.get("line_num")
+                    raw_p = parse_safe_numeric_price(item.get("quoted_price"))
+                    curr = str(item.get("currency", "INR")).upper()
+                    q_uom = str(item.get("quoted_uom", "pc")).lower()
+                    if raw_p:
+                        norm_p = round(raw_p * DEMO_FX_RATES.get(curr, 1.0), 2)
+                        review_table.append({
+                            "Line #": lnum,
+                            "Original Quote": f"{curr} {raw_p:.2f} / {q_uom}",
+                            "Normalized INR": norm_p,
+                            "Snippet": item.get("verbatim_snippet", "Raw quote")
+                        })
+                st.dataframe(pd.DataFrame(review_table), use_container_width=True, hide_index=True)
+                
+                r_c1, r_c2 = st.columns([1, 1])
+                with r_c1:
+                    if st.button(f"Confirm & Commit Bids for {sname}", type="primary", use_container_width=True):
+                        meta = sup_map[sname]
+                        for row_entry in review_table:
+                            lnum = row_entry["Line #"]
+                            st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, meta["norm_col"]] = row_entry["Normalized INR"]
+                            st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, meta["orig_col"]] = row_entry["Original Quote"]
+                            st.session_state.master_matrix.loc[st.session_state.master_matrix["Line #"] == lnum, meta["status_col"]] = "CONFIRMED"
+                        
+                        st.session_state.uploaded_suppliers.add(sname)
+                        st.session_state.processed_file_hashes.add(st.session_state.pending_extraction["file_hash"])
+                        st.session_state.pending_extraction = None
+                        invalidate_analysis_snapshot()
+                        st.toast(f"✓ Quotes successfully committed for {sname}!", icon="✅")
+                        st.rerun()
+                with r_c2:
+                    if st.button("Discard Extraction", type="secondary", use_container_width=True):
+                        st.session_state.pending_extraction = None
+                        st.rerun()
+
         with t_audit:
             st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A;'>Line-Item Extraction & FX Normalization Log</div>", unsafe_allow_html=True)
-            st.caption("Verifiable audit trail detailing raw vendor quotes vs. normalized INR rates.")
-            
             audit_log_data = []
             for idx, row in st.session_state.master_matrix.iterrows():
                 for sname in calc["active_suppliers"]:
@@ -1444,8 +1541,6 @@ elif st.session_state.stage == "Supplier Responses":
 
         with t_risk:
             st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A;'>Supplier Compliance & Commercial Deviation Matrix</div>", unsafe_allow_html=True)
-            st.caption("Identify non-compliant payment terms, missing certifications, and high defect rates prior to award selection.")
-            
             risk_rows = []
             for sname in calc["active_suppliers"]:
                 q_info = calc["qualification_status"][sname]
@@ -1457,21 +1552,11 @@ elif st.session_state.stage == "Supplier Responses":
                     "Qualification Badge": "QUALIFIED" if q_info["qualified"] else "DISQUALIFIED",
                     "Disqualification Reason": q_info["reason"],
                     "Offered Terms": pay_val,
-                    "Commercial Risk": "Low Risk" if "Net 60" in pay_val else "Requires Approval",
                     "SKU Coverage": f"{s_tot['lines_quoted']} / {s_tot['total_lines']} SKUs"
                 })
             
             risk_df = pd.DataFrame(risk_rows)
-            def style_risk_matrix(df_data):
-                styled = pd.DataFrame('', index=df_data.index, columns=df_data.columns)
-                for idx, row in df_data.iterrows():
-                    if row["Qualification Badge"] == "QUALIFIED":
-                        styled.loc[idx, "Qualification Badge"] = 'background-color: #DCFCE7; color: #15803D; font-weight: bold;'
-                    else:
-                        styled.loc[idx, "Qualification Badge"] = 'background-color: #FEF2F2; color: #991B1B; font-weight: bold;'
-                return styled
-
-            st.dataframe(risk_df.style.apply(style_risk_matrix, axis=None), use_container_width=True, hide_index=True)
+            st.dataframe(risk_df, use_container_width=True, hide_index=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1483,14 +1568,18 @@ elif st.session_state.stage == "Supplier Responses":
             scroll_to_top()
             st.rerun()
     with b2:
-        if st.button("Continue to Compare & Decide Workspace →", type="primary"):
+        can_proceed = st.session_state.demo_mode or (len(st.session_state.uploaded_suppliers) > 0)
+        if st.button("Continue to Compare & Decide Workspace →", type="primary", disabled=not can_proceed):
             st.session_state.compare_unlocked = True
             st.session_state.stage = "Compare & Decide"
             scroll_to_top()
             st.rerun()
+            
+        if not can_proceed:
+            st.warning("🔒 **Strict Gatekeeper:** Demo Mode is OFF. You must upload and accept at least 1 supplier quote proposal above before advancing to the decision workspace.")
 
 # =============================================================================
-# STAGE 3: COMPARE & DECIDE WORKSPACE (DYNAMIC PER-QUERY AI)
+# STAGE 3: COMPARE & DECIDE WORKSPACE (CLICK-EXECUTABLE PROMPTS)
 # =============================================================================
 elif st.session_state.stage == "Compare & Decide":
     active_sups = get_active_suppliers()
@@ -1526,7 +1615,6 @@ elif st.session_state.stage == "Compare & Decide":
                 
             matrix_display = st.session_state.master_matrix[matrix_cols].copy()
             
-            # Compute Lowest Bidder per Line Item
             lowest_bidders = []
             lowest_prices = []
             for idx, row in matrix_display.iterrows():
@@ -1623,80 +1711,36 @@ elif st.session_state.stage == "Compare & Decide":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # SECTION B: DYNAMIC DECISION CO-PILOT WITH QUERY-SPECIFIC ANSWERS
+    # SECTION B: DYNAMIC DECISION CO-PILOT WITH INSTANT DIRECT-EXECUTION FIX
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Procurement Decision & Scenario Co-Pilot</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='section-header-subtitle'>Contextually tailored questions for <b>{current_cat}</b>. Select a suggested prompt or ask any custom question.</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='section-header-subtitle'>Contextually tailored questions for <b>{current_cat}</b>. Click any suggested prompt below for an immediate query-specific evaluation.</div>", unsafe_allow_html=True)
 
         st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Suggested Decision Queries:</div>", unsafe_allow_html=True)
         
         prompt_cols = st.columns(2)
-        
         for idx, p_text in enumerate(cat_prompts):
             c_idx = idx % 2
             with prompt_cols[c_idx]:
-                if st.button(f"💡 {p_text}", key=f"dyn_prompt_btn_{idx}", use_container_width=True):
-                    st.session_state.user_prompt_input = p_text
+                if st.button(f"💡 {p_text}", key=f"direct_prompt_btn_{idx}", use_container_width=True):
+                    st.session_state.active_copilot_query = p_text
+                    with st.spinner(f"Evaluating query: '{p_text}'..."):
+                        run_copilot_direct_analysis(p_text, calc)
 
-        query_input = st.text_input(
-            "Enter sourcing question:",
-            key="custom_query_input_text",
-            value=st.session_state.get("user_prompt_input", cat_prompts[0]),
-            placeholder="e.g. Which supplier is lowest cost for 5-ply cartons vs 3-ply cartons?",
-            label_visibility="collapsed"
+        st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
+        user_query_typed = st.text_input(
+            "Or type a custom sourcing question:",
+            key="custom_text_prompt_input",
+            value=st.session_state.active_copilot_query if st.session_state.active_copilot_query else cat_prompts[0],
+            placeholder="Type your prompt here..."
         )
 
         if st.button("Ask Decision Co-Pilot →", type="primary"):
-            if query_input:
-                status_placeholder = st.empty()
-                status_placeholder.info(f"⏳ **Analyzing Question:** '{query_input}' against supplier matrix...")
-
-                matrix_json = st.session_state.master_matrix.to_json(orient="records")
-                q_json = st.session_state.questionnaire_matrix.to_json(orient="records")
-                
-                disqualified_list = [f"{s} ({info['reason']})" for s, info in calc['qualification_status'].items() if (s in calc['active_suppliers'] and not info['qualified'])]
-                disqual_str = "; ".join(disqualified_list) if disqualified_list else "None"
-
-                system_instruction = f"""
-                You are an executive procurement intelligence model.
-                You are asked the SPECIFIC question: '{query_input}'.
-                
-                CRITICAL INSTRUCTIONS:
-                1. Do NOT give a standard template response. 
-                2. Answer ONLY the specific user question '{query_input}'.
-                3. If asked about 5-ply vs 3-ply, filter rows with '5-ply' or '3-ply' and compare prices.
-                4. If asked about non-compliant or missing ISO, list the exact suppliers (e.g. National Paper Mills).
-                5. Keep output high-density, precise, and structured in JSON.
-                
-                JSON OUTPUT SCHEME:
-                {{
-                    "headline_answer": "Direct, single-sentence response answering the exact question with numbers.",
-                    "executive_summary": "1-2 bullet points with data facts.",
-                    "key_findings": ["Finding 1 addressing specific SKUs/vendors", "Finding 2"],
-                    "trade_offs_and_risks": ["Risk 1", "Risk 2"],
-                    "recommended_action": "Actionable procurement next step."
-                }}
-                """
-                
-                try:
-                    res = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=f"Master Matrix:\n{matrix_json}\n\nQuestionnaire:\n{q_json}\n\nUser Question: {query_input}",
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            response_mime_type="application/json",
-                            temperature=0.1
-                        )
-                    )
-                    status_placeholder.empty()
-                    parsed_ans = extract_json_from_response(res.text)
-                    
-                    st.session_state.last_analysis_query = query_input
-                    st.session_state.last_analysis_result = parsed_ans
-                except Exception as e:
-                    status_placeholder.empty()
-                    st.error(f"Co-Pilot response error: {str(e)}")
+            if user_query_typed:
+                st.session_state.active_copilot_query = user_query_typed
+                with st.spinner(f"Evaluating custom question: '{user_query_typed}'..."):
+                    run_copilot_direct_analysis(user_query_typed, calc)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1706,8 +1750,8 @@ elif st.session_state.stage == "Compare & Decide":
         
         with st.container():
             st.markdown("<div class='aerchain-section' style='background-color: #FFFFFF; border: 1px solid #CBD5E1; padding: 20px; border-radius: 8px;'>", unsafe_allow_html=True)
-            st.markdown("<div style='font-size:0.80rem; font-weight:700; color:#2563EB; text-transform:uppercase; letter-spacing:0.05em;'>Executive Decision Brief</div>", unsafe_allow_html=True)
-            st.markdown(f"<h3 style='margin: 4px 0 12px 0; font-size: 1.15rem; font-weight: 700; color: #0F172A;'>{ans.get('headline_answer', '')}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:0.75rem; font-weight:700; color:#2563EB; text-transform:uppercase;'>Executive Decision Brief · Query: '{st.session_state.last_analysis_query}'</div>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='margin: 6px 0 12px 0; font-size: 1.15rem; font-weight: 700; color: #0F172A;'>{ans.get('headline_answer', '')}</h3>", unsafe_allow_html=True)
             
             k_col1, k_col2 = st.columns(2)
             with k_col1:
@@ -1740,7 +1784,6 @@ elif st.session_state.stage == "Compare & Decide":
 
         st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
         
-        # Enhanced Stacked Bar Chart: Awarded Spend & Line Count per Qualified Vendor
         chart_data = []
         for sname, s_info in calc["vendor_award_summary"].items():
             if s_info["lines"] > 0:
