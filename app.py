@@ -1593,7 +1593,7 @@ elif st.session_state.stage == "Supplier Responses":
             st.rerun()
 
 # =============================================================================
-# STAGE 3: COMPARE QUOTES & COMPLIANCE
+# STAGE 3: COMPARE QUOTES & COMPLIANCE (FIXED COLUMN GUARD)
 # =============================================================================
 elif st.session_state.stage == "Compare Bids":
     with st.container():
@@ -1625,17 +1625,17 @@ elif st.session_state.stage == "Compare Bids":
         )
 
         responses_rcvd_count = len(st.session_state.uploaded_suppliers)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
+        s1, s2, s3, s4 = st.columns(4)
+        with s1:
             st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Uploaded Responses</div><div class='kpi-value'>{responses_rcvd_count} / {len(SUPPLIERS)}</div><div class='kpi-subtext'>Supplier submissions</div></div>", unsafe_allow_html=True)
-        with c2:
+        with s2:
             if st.session_state.demo_mode:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Demo Baseline Quotes</div><div class='kpi-value'>5 / 5</div><div class='kpi-subtext'>Preloaded baselines</div></div>", unsafe_allow_html=True)
             else:
                 st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Complete Quotes</div><div class='kpi-value'>{sum(1 for k in calc['active_suppliers'] if calc['supplier_totals'][k]['is_complete'])}</div><div class='kpi-subtext'>100% coverage</div></div>", unsafe_allow_html=True)
-        with c3:
+        with s3:
             st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Qualified Vendors</div><div class='kpi-value'>{calc['total_qualified_suppliers']} / {len(calc['active_suppliers'])}</div><div class='kpi-subtext'>Passed compliance</div></div>", unsafe_allow_html=True)
-        with c4:
+        with s4:
             st.markdown(f"<div class='kpi-card'><div class='kpi-label'>Exception Lines</div><div class='kpi-value'>{calc['total_line_exceptions']}</div><div class='kpi-subtext'>Require verification</div></div>", unsafe_allow_html=True)
 
         st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
@@ -1662,7 +1662,10 @@ elif st.session_state.stage == "Compare Bids":
                 "Quoted spend": spend_str
             })
             
-        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+        if summary_rows:
+            st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No supplier responses uploaded yet. Upload a supplier quotation in Stage 2 or toggle 'Include demo baseline data' above.")
 
         if calc["dynamic_issue_descriptions"]:
             with st.expander(f"Issues requiring attention · {calc['total_line_exceptions']} lines affected"):
@@ -1697,13 +1700,14 @@ elif st.session_state.stage == "Compare Bids":
                 col_rename_map[SUPPLIER_MAP[sname]["norm_col"]] = SUPPLIER_MAP[sname]["prefix"].upper()
             matrix_display = matrix_display.rename(columns=col_rename_map)
 
-            # Metadata Header Bar for Supplier Columns
-            meta_cols = st.columns([1, 2.5, 0.8, 0.8] + [1.5] * len(calc["active_suppliers"]))
-            for idx, sname in enumerate(calc["active_suppliers"]):
-                q_lbl = "QUALIFIED" if calc["qualification_status"].get(sname, {}).get("qualified", False) else "DISQUALIFIED"
-                prov_lbl = "Submitted" if sname in st.session_state.uploaded_suppliers else "Demo"
-                with meta_cols[4 + idx]:
-                    st.caption(f"**{q_lbl}**\n\n{prov_lbl}")
+            # Metadata Header Bar for Supplier Columns (Guarded against 0 active suppliers)
+            if calc["active_suppliers"]:
+                meta_cols = st.columns([1, 2.5, 0.8, 0.8] + [1.5] * len(calc["active_suppliers"]))
+                for idx, sname in enumerate(calc["active_suppliers"]):
+                    q_lbl = "QUALIFIED" if calc["qualification_status"].get(sname, {}).get("qualified", False) else "DISQUALIFIED"
+                    prov_lbl = "Submitted" if sname in st.session_state.uploaded_suppliers else "Demo"
+                    with meta_cols[4 + idx]:
+                        st.caption(f"**{q_lbl}**\n\n{prov_lbl}")
             
             if st.session_state.exception_filter == "Quoted lines with exceptions":
                 matrix_display = matrix_display[matrix_display["Line #"].isin(calc["exception_line_numbers"])]
@@ -1747,7 +1751,7 @@ elif st.session_state.stage == "Compare Bids":
             styled_matrix = matrix_display.style.apply(style_matrix_cells, axis=1)
             st.dataframe(styled_matrix, use_container_width=True, height=380, hide_index=True)
             
-            # Side-by-Side Provenance & Document Snippet Inspector Popover
+            # Side-by-Side Provenance & Document Snippet Inspector Popover (SAFE GUARDED FOR len > 0)
             with st.popover("Inspect Document Evidence & Provenance Side-by-Side"):
                 st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Line-Item Document Evidence Inspector</div>", unsafe_allow_html=True)
                 st.caption("Verbatim source excerpts and extraction confidence for all active supplier quotes")
@@ -1758,18 +1762,22 @@ elif st.session_state.stage == "Compare Bids":
                 st.markdown(f"**SKU:** `{line_row['Line #']}` — {line_row['Description']} ({line_row['Quantity']:,} {line_row['UOM']})")
                 st.markdown("---")
                 
-                p_cols = st.columns(len(calc["active_suppliers"]))
-                for idx, sname in enumerate(calc["active_suppliers"]):
-                    meta = SUPPLIER_MAP[sname]
-                    with p_cols[idx]:
-                        st.markdown(f"**{sname}**")
-                        st.markdown(f"Quote: `{line_row.get(meta['orig_col'], '—')}`")
-                        st.markdown(f"Norm. INR: `₹{line_row.get(meta['norm_col'], '—')}`")
-                        st.markdown(f"Status: `{line_row.get(meta['status_col'], '—')}`")
-                        st.markdown(f"Confidence: `{line_row.get(meta['conf_col'], '—')}`")
-                        st.markdown(f"Ref: `{line_row.get(meta['source_col'], 'N/A')}`")
-                        st.caption("Verbatim Snippet:")
-                        st.code(line_row.get(meta['snippet_col'], "No snippet available."), language="text")
+                num_active = len(calc["active_suppliers"])
+                if num_active > 0:
+                    p_cols = st.columns(num_active)
+                    for idx, sname in enumerate(calc["active_suppliers"]):
+                        meta = SUPPLIER_MAP[sname]
+                        with p_cols[idx]:
+                            st.markdown(f"**{sname}**")
+                            st.markdown(f"Quote: `{line_row.get(meta['orig_col'], '—')}`")
+                            st.markdown(f"Norm. INR: `₹{line_row.get(meta['norm_col'], '—')}`")
+                            st.markdown(f"Status: `{line_row.get(meta['status_col'], '—')}`")
+                            st.markdown(f"Confidence: `{line_row.get(meta['conf_col'], '—')}`")
+                            st.markdown(f"Ref: `{line_row.get(meta['source_col'], 'N/A')}`")
+                            st.caption("Verbatim Snippet:")
+                            st.code(line_row.get(meta['snippet_col'], "No snippet available."), language="text")
+                else:
+                    st.info("No active suppliers to inspect. Upload supplier documents or enable Demo Mode.")
 
             st.markdown("""
             <div style="font-size: 0.78rem; color: #64748B; margin-top: 6px;">
@@ -1795,7 +1803,10 @@ elif st.session_state.stage == "Compare Bids":
                     "Qualification": "Qualified" if q_info["qualified"] else "Disqualified",
                     "Reason / Evaluation": q_info["reason"]
                 })
-            st.dataframe(pd.DataFrame(qual_summary), use_container_width=True, hide_index=True)
+            if qual_summary:
+                st.dataframe(pd.DataFrame(qual_summary), use_container_width=True, hide_index=True)
+            else:
+                st.info("No active suppliers available.")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
