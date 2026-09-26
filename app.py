@@ -342,16 +342,6 @@ st.markdown(f"""
         background-color: #F1F5F9 !important;
     }}
 
-    .decision-list-item {{
-        font-size: 0.83rem;
-        color: {DESIGN_SYSTEM['colors']['text_primary']};
-        padding: 6px 0;
-        border-bottom: 1px dashed {DESIGN_SYSTEM['colors']['border_subtle']};
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }}
-    
     .section-divider {{
         height: 1px;
         background-color: {DESIGN_SYSTEM['colors']['border_subtle']};
@@ -708,9 +698,6 @@ if "responses_unlocked" not in st.session_state:
 if "compare_unlocked" not in st.session_state:
     st.session_state.compare_unlocked = False
 
-if "analyze_unlocked" not in st.session_state:
-    st.session_state.analyze_unlocked = False
-
 if "uploaded_suppliers" not in st.session_state:
     st.session_state.uploaded_suppliers = set()
 
@@ -767,7 +754,6 @@ def reset_rfq_session():
         del st.session_state["procurement_brief_textarea"]
     st.session_state.responses_unlocked = False
     st.session_state.compare_unlocked = False
-    st.session_state.analyze_unlocked = False
     st.session_state.uploaded_suppliers = set()
     st.session_state.supplier_meta = {}
     st.session_state.supplier_quote_fingerprints = {}
@@ -1005,18 +991,17 @@ if st.session_state.pending_extraction:
     st.warning(f"⚠️ **Pending Extraction Review:** Extracted quote data for **{pending_vendor}** has not yet been added to the comparison matrix. Please apply or discard the extracted quote below before proceeding.")
 
 # =============================================================================
-# REFINED WORKFLOW STEPPER BAR
+# REFINED 3-STEP WORKFLOW STEPPER BAR
 # =============================================================================
 stages = [
     ("Create RFQ", "01 Create RFQ", True),
     ("Supplier Responses", "02 Supplier Responses", st.session_state.responses_unlocked),
-    ("Compare Bids", "03 Compare Bids", st.session_state.compare_unlocked and not st.session_state.pending_extraction),
-    ("Analyze & Decide", "04 Analyze & Decide", st.session_state.analyze_unlocked and not st.session_state.pending_extraction)
+    ("Compare & Decide", "03 Compare & Decide Workspace", st.session_state.compare_unlocked and not st.session_state.pending_extraction)
 ]
 cur_idx = [s[0] for s in stages].index(st.session_state.stage)
 
 st.markdown("<div class='workflow-stepper-container'>", unsafe_allow_html=True)
-step_cols = st.columns(4)
+step_cols = st.columns(3)
 for idx, (stage_key, stage_label, is_unlocked) in enumerate(stages):
     if idx < cur_idx:
         btn_label = f"✓ {stage_label}"
@@ -1046,7 +1031,6 @@ if st.session_state.stage == "Create RFQ":
             st.markdown("<div class='section-header-title'>Turn a sourcing requirement into a structured RFQ</div>", unsafe_allow_html=True)
             st.markdown("<div class='section-header-subtitle'>Describe what you're buying, where it is needed, quantities, delivery expectations and any commercial constraints. AI will turn this into an editable RFQ draft.</div>", unsafe_allow_html=True)
 
-            # Define button callbacks before rendering widget to avoid StreamlitWidgetAlreadyInstantiatedError
             def set_packaging_brief():
                 st.session_state["procurement_brief_textarea"] = "Source 30 corrugated packaging box SKUs for Bhiwandi and Hosur logistics facilities with Net 60 payment terms, 60 days price validity, and ISO 9001 mandatory certification."
                 st.session_state.user_prompt_input = st.session_state["procurement_brief_textarea"]
@@ -1215,7 +1199,7 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Top Summary Cards (Always dynamically up to date with controls)
+        # Top Summary Cards
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
             
@@ -1339,7 +1323,6 @@ if st.session_state.stage == "Create RFQ":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # Native Streamlit Dialog Modal Popup Window for full Review & Publish (with width="large")
         if st.session_state.get("show_publish_review_modal", False):
             @st.dialog("📋 Executive RFQ Review Before Publishing", width="large")
             def render_publish_review_dialog():
@@ -1391,7 +1374,6 @@ elif st.session_state.stage == "Supplier Responses":
     active_sups = get_active_suppliers()
     sup_map = get_supplier_mapping(active_sups)
 
-    # TOP DEMO TOGGLE BAR - Positioned at the very top for real-time visibility
     with st.container():
         st.markdown("<div class='aerchain-section' style='padding-bottom:10px;'>", unsafe_allow_html=True)
         dt_col1, dt_col2 = st.columns([3, 1])
@@ -1406,7 +1388,6 @@ elif st.session_state.stage == "Supplier Responses":
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Calculate current state metrics AFTER toggle evaluation
     calc = calculate_deterministic_spend_engine(
         st.session_state.master_matrix,
         st.session_state.questionnaire_matrix,
@@ -1414,7 +1395,6 @@ elif st.session_state.stage == "Supplier Responses":
         st.session_state.demo_mode
     )
 
-    # Dynamic Top KPI Metric Summary Cards
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         resp_col1, resp_col2, resp_col3, resp_col4 = st.columns(4)
@@ -1603,7 +1583,7 @@ elif st.session_state.stage == "Supplier Responses":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Supplier Response Inbox Table — Dynamic Filtering & Rich Details
+    # Supplier Response Inbox Table
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-title'>Supplier Response Status Inbox</div>", unsafe_allow_html=True)
@@ -1666,84 +1646,19 @@ elif st.session_state.stage == "Supplier Responses":
             scroll_to_top()
             st.rerun()
     with b2:
-        if st.button("Continue to Compare Quotes →", type="primary", disabled=bool(st.session_state.pending_extraction)):
+        if st.button("Continue to Compare & Decide Workspace →", type="primary", disabled=bool(st.session_state.pending_extraction)):
             st.session_state.compare_unlocked = True
-            st.session_state.stage = "Compare Bids"
+            st.session_state.stage = "Compare & Decide"
             scroll_to_top()
             st.rerun()
 
 # =============================================================================
-# STAGE 3: COMPARE QUOTES & COMPLIANCE
+# STAGE 3: UNIFIED COMPARISON & DECISION WORKSPACE (ALL-IN-ONE)
 # =============================================================================
-elif st.session_state.stage == "Compare Bids":
+elif st.session_state.stage == "Compare & Decide":
     active_sups = get_active_suppliers()
     sup_map = get_supplier_mapping(active_sups)
 
-    with st.container():
-        st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-title'>Supplier Pricing & Qualification Matrix</div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-subtitle'>Compare normalized unit prices, coverage and qualification status for this requirement.</div>", unsafe_allow_html=True)
-
-        calc = calculate_deterministic_spend_engine(
-            st.session_state.master_matrix,
-            st.session_state.questionnaire_matrix,
-            st.session_state.uploaded_suppliers,
-            st.session_state.demo_mode
-        )
-
-        matrix_cols = ["Line #", "Description", "Quantity", "UOM", "Target Price (INR)"]
-        for sname in calc["active_suppliers"]:
-            matrix_cols.append(sup_map[sname]["norm_col"])
-            
-        matrix_display = st.session_state.master_matrix[matrix_cols].copy()
-        col_rename_map = {"Quantity": "Qty", "Target Price (INR)": "Target (₹)"}
-        for sname in calc["active_suppliers"]:
-            col_rename_map[sup_map[sname]["norm_col"]] = sup_map[sname]["prefix"].upper()
-        matrix_display = matrix_display.rename(columns=col_rename_map)
-
-        st.dataframe(matrix_display, use_container_width=True, height=380, hide_index=True)
-        
-        with st.popover("Inspect Document Evidence & Provenance Side-by-Side"):
-            st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A;'>Line-Item Document Evidence Inspector</div>", unsafe_allow_html=True)
-            st.caption("Verbatim source excerpts and extraction confidence for active supplier quotes")
-            
-            line_select = st.selectbox("Select Line Item to Inspect:", st.session_state.master_matrix["Line #"].tolist())
-            line_row = st.session_state.master_matrix[st.session_state.master_matrix["Line #"] == line_select].iloc[0]
-            
-            st.markdown(f"**SKU:** `{line_row['Line #']}` — {line_row['Description']} ({line_row['Quantity']:,} {line_row['UOM']})")
-            st.markdown("---")
-            
-            p_cols = st.columns(len(calc["active_suppliers"]))
-            for idx, sname in enumerate(calc["active_suppliers"]):
-                m = sup_map[sname]
-                with p_cols[idx]:
-                    st.markdown(f"**{sname}**")
-                    st.markdown(f"Quote: `{line_row.get(m['orig_col'], '—')}`")
-                    st.markdown(f"Norm. INR: `₹{line_row.get(m['norm_col'], '—')}`")
-                    st.caption("Verbatim Snippet:")
-                    st.code(line_row.get(m['snippet_col'], "No snippet available."), language="text")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
-    cb1, cb2 = st.columns([1, 1])
-    with cb1:
-        if st.button("← Back to Responses", type="secondary"):
-            st.session_state.stage = "Supplier Responses"
-            scroll_to_top()
-            st.rerun()
-    with cb2:
-        if st.button("Continue to Scenario Analysis →", type="primary"):
-            st.session_state.analyze_unlocked = True
-            st.session_state.stage = "Analyze & Decide"
-            scroll_to_top()
-            st.rerun()
-
-# =============================================================================
-# STAGE 4: PROCUREMENT DECISION WORKSPACE
-# =============================================================================
-elif st.session_state.stage == "Analyze & Decide":
-    active_sups = get_active_suppliers()
     calc = calculate_deterministic_spend_engine(
         st.session_state.master_matrix,
         st.session_state.questionnaire_matrix,
@@ -1753,13 +1668,69 @@ elif st.session_state.stage == "Analyze & Decide":
 
     current_dataset_fp = compute_dataset_fingerprint()
 
-    # 1. Compact Header & Interactive Sourcing Query Bar
+    # SECTION A: UNIFIED COMPARISON MATRIX & QUESTIONNAIRES & DOCUMENTS
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-title'>Procurement Decision Workspace</div>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-subtitle'>Analyze supplier eligibility, evaluate price-only split economics, and verify PO pre-requisites.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Single Side-by-Side Response Comparison Workspace</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-subtitle'>All supplier responses landed side-by-side: same lines, same units, same currency — with questionnaire answers and attached document evidence sitting directly alongside the commercial numbers.</div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='font-size:0.9rem; font-weight:600; color:#0F172A; margin-bottom:6px;'>Ask about your sourcing data</div>", unsafe_allow_html=True)
+        tab_prices, tab_quest, tab_docs = st.tabs([
+            "📊 Line-Item Pricing Matrix (Same Lines, Units & Currency)", 
+            "📋 Supplier Questionnaire & Compliance Answers",
+            "📄 Document Evidence & Source Provenance Inspector"
+        ])
+
+        with tab_prices:
+            matrix_cols = ["Line #", "Description", "Quantity", "UOM", "Target Price (INR)"]
+            for sname in calc["active_suppliers"]:
+                matrix_cols.append(sup_map[sname]["norm_col"])
+                
+            matrix_display = st.session_state.master_matrix[matrix_cols].copy()
+            col_rename_map = {"Quantity": "Qty", "Target Price (INR)": "Target (₹)"}
+            for sname in calc["active_suppliers"]:
+                col_rename_map[sup_map[sname]["norm_col"]] = f"{sup_map[sname]['prefix'].upper()} (₹)"
+            matrix_display = matrix_display.rename(columns=col_rename_map)
+
+            st.dataframe(matrix_display, use_container_width=True, height=360, hide_index=True)
+
+        with tab_quest:
+            st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A; margin-bottom:8px;'>Qualification & Questionnaire Criteria Comparison</div>", unsafe_allow_html=True)
+            st.dataframe(st.session_state.questionnaire_matrix, use_container_width=True, height=320, hide_index=True)
+
+        with tab_docs:
+            st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A;'>Attached Document Evidence & Verbatim Provenance</div>", unsafe_allow_html=True)
+            st.caption("Inspect verbatim source excerpts, page references, and extraction confidence scores for any line item.")
+            
+            doc_col1, doc_col2 = st.columns([1, 2])
+            with doc_col1:
+                line_select = st.selectbox("Select Line Item to Inspect:", st.session_state.master_matrix["Line #"].tolist())
+                line_row = st.session_state.master_matrix[st.session_state.master_matrix["Line #"] == line_select].iloc[0]
+                st.markdown(f"**Selected SKU:** `{line_row['Line #']}`")
+                st.markdown(f"**Description:** {line_row['Description']}")
+                st.markdown(f"**Quantity:** {line_row['Quantity']:,} {line_row['UOM']}")
+                st.markdown(f"**Target Unit Price:** ₹{line_row['Target Price (INR)']:.2f}")
+
+            with doc_col2:
+                st.markdown("**Side-by-Side Vendor Quotation Excerpts:**")
+                p_cols = st.columns(len(calc["active_suppliers"]))
+                for idx, sname in enumerate(calc["active_suppliers"]):
+                    m = sup_map[sname]
+                    with p_cols[idx]:
+                        st.markdown(f"**{sname}**")
+                        st.markdown(f"Quote: `{line_row.get(m['orig_col'], '—')}`")
+                        st.markdown(f"Norm: `₹{line_row.get(m['norm_col'], '—')}`")
+                        st.caption("Source Excerpt:")
+                        st.code(line_row.get(m['snippet_col'], "No snippet available."), language="text")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # SECTION B: INTERACTIVE DECISION CO-PILOT
+    with st.container():
+        st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Procurement Decision & Scenario Co-Pilot</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-subtitle'>Analyze vendor eligibility, evaluate price-only split scenarios, and query sourcing data in real time.</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='font-size:0.88rem; font-weight:600; color:#0F172A; margin-bottom:6px;'>Ask about your sourcing data:</div>", unsafe_allow_html=True)
         
         q_btn_1, q_btn_2, q_btn_3, q_btn_4 = st.columns(4)
         prompt_choice = None
@@ -1780,7 +1751,7 @@ elif st.session_state.stage == "Analyze & Decide":
             label_visibility="collapsed"
         )
 
-        if st.button("Ask →", type="primary"):
+        if st.button("Ask Decision Co-Pilot →", type="primary"):
             if user_query:
                 with st.spinner("Analyzing sourcing data..."):
                     matrix_json = st.session_state.master_matrix.to_json(orient="records")
@@ -1835,14 +1806,14 @@ elif st.session_state.stage == "Analyze & Decide":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. Primary Sourcing Findings Container
+    # SECTION C: PRIMARY FINDINGS & ALLOCATION GRAPH
     if st.session_state.last_analysis_result:
         parsed_ans = st.session_state.last_analysis_result
         active_intent = parsed_ans.get("intent", "eligibility")
         
         with st.container():
             st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-            st.markdown("<div class='section-header-title'>Primary Sourcing Findings</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-header-title'>Primary Decision Findings</div>", unsafe_allow_html=True)
             st.markdown(f"<h3 style='margin: 4px 0 16px 0; font-size: 1.15rem; font-weight: 600; color: #0F172A;'>{parsed_ans.get('headline_answer', '')}</h3>", unsafe_allow_html=True)
             
             if active_intent == "eligibility" or "eligib" in st.session_state.last_analysis_query.lower():
@@ -1865,10 +1836,10 @@ elif st.session_state.stage == "Analyze & Decide":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # 3. Price-Only Allocation Cards & Visual Graph
+    # Price-Only Allocation Cards & Chart
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-title'>Price-Only Sourcing Scenario</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Price-Only Award Scenario Modeling</div>", unsafe_allow_html=True)
         st.markdown("<div class='section-header-subtitle'>Price-only baseline scenario assuming lowest unit price allocation across qualified suppliers. Freight, GST, capacity, and lead times are excluded.</div>", unsafe_allow_html=True)
 
         sc1, sc2, sc3 = st.columns(3)
@@ -1899,10 +1870,10 @@ elif st.session_state.stage == "Analyze & Decide":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # 4. Methodology, Assumptions & Audit Trail Export
+    # Methodology, Assumptions & Audit Trail Export
     with st.container():
         st.markdown("<div class='aerchain-section'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-header-title'>Methodology, Assumptions & Audit Trail</div>", unsafe_allow_html=True)
+        st.markdown("<div class='section-header-title'>Methodology, Assumptions & Audit Trail Export</div>", unsafe_allow_html=True)
         
         with st.expander("Evidence & Audit Trail Export"):
             st.markdown("Supplier-line records available for audit export. Exports include original quote, normalized price, validation status, extraction confidence, source reference, and RFQ fingerprint.")
@@ -1939,3 +1910,11 @@ elif st.session_state.stage == "Analyze & Decide":
             st.download_button("Download comparison & audit CSV", audit_csv_data, "RFQ_Audit_Master_Matrix.csv", "text/csv", type="secondary")
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
+    cb1, cb2 = st.columns([1, 1])
+    with cb1:
+        if st.button("← Back to Responses", type="secondary"):
+            st.session_state.stage = "Supplier Responses"
+            scroll_to_top()
+            st.rerun()
