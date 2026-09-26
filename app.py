@@ -763,6 +763,8 @@ def reset_rfq_session():
     st.session_state.rfq_data = None
     st.session_state.rfq_status = "Draft"
     st.session_state.user_prompt_input = ""
+    if "procurement_brief_textarea" in st.session_state:
+        del st.session_state["procurement_brief_textarea"]
     st.session_state.responses_unlocked = False
     st.session_state.compare_unlocked = False
     st.session_state.analyze_unlocked = False
@@ -1044,13 +1046,23 @@ if st.session_state.stage == "Create RFQ":
             st.markdown("<div class='section-header-title'>Turn a sourcing requirement into a structured RFQ</div>", unsafe_allow_html=True)
             st.markdown("<div class='section-header-subtitle'>Describe what you're buying, where it is needed, quantities, delivery expectations and any commercial constraints. AI will turn this into an editable RFQ draft.</div>", unsafe_allow_html=True)
 
-            # Bind directly to text area key so updates reflect immediately
-            if "procurement_brief_textarea" not in st.session_state:
-                st.session_state.procurement_brief_textarea = st.session_state.user_prompt_input
+            # Define button callbacks before rendering widget to avoid StreamlitWidgetAlreadyInstantiatedError
+            def set_packaging_brief():
+                st.session_state["procurement_brief_textarea"] = "Source 30 corrugated packaging box SKUs for Bhiwandi and Hosur logistics facilities with Net 60 payment terms, 60 days price validity, and ISO 9001 mandatory certification."
+                st.session_state.user_prompt_input = st.session_state["procurement_brief_textarea"]
+
+            def set_furniture_brief():
+                st.session_state["procurement_brief_textarea"] = "Create an RFQ for executive office furniture, modular workstations, and ergonomic mesh chairs across Corporate HQ, Pune Tech Hub, and regional branch with 3-year comprehensive warranty."
+                st.session_state.user_prompt_input = st.session_state["procurement_brief_textarea"]
+
+            def clear_brief():
+                st.session_state["procurement_brief_textarea"] = ""
+                st.session_state.user_prompt_input = ""
 
             prompt_val = st.text_area(
                 "Procurement Brief:",
                 key="procurement_brief_textarea",
+                value=st.session_state.get("user_prompt_input", ""),
                 height=120,
                 placeholder="Describe your requirement (e.g., 'Source 30 corrugated packaging SKUs for Bhiwandi and Hosur facilities' or 'Create an RFQ for office furniture across 3 locations')..."
             )
@@ -1103,26 +1115,14 @@ if st.session_state.stage == "Create RFQ":
                         scroll_to_top()
                         st.rerun()
 
-            # "Try Brief" buttons directly populate text area widget key
             with p_col2:
-                if st.button("Try 30-SKU Packaging Brief", type="secondary", use_container_width=True):
-                    st.session_state.procurement_brief_textarea = "Source 30 corrugated packaging box SKUs for Bhiwandi and Hosur logistics facilities with Net 60 payment terms, 60 days price validity, and ISO 9001 mandatory certification."
-                    st.session_state.user_prompt_input = st.session_state.procurement_brief_textarea
-                    scroll_to_top()
-                    st.rerun()
+                st.button("Try 30-SKU Packaging Brief", type="secondary", on_click=set_packaging_brief, use_container_width=True)
 
             with p_col3:
-                if st.button("Try Furniture Brief", type="secondary", use_container_width=True):
-                    st.session_state.procurement_brief_textarea = "Create an RFQ for executive office furniture, modular workstations, and ergonomic mesh chairs across Corporate HQ, Pune Tech Hub, and regional branch with 3-year comprehensive warranty."
-                    st.session_state.user_prompt_input = st.session_state.procurement_brief_textarea
-                    scroll_to_top()
-                    st.rerun()
+                st.button("Try Furniture Brief", type="secondary", on_click=set_furniture_brief, use_container_width=True)
 
             with p_col4:
-                if st.button("🔄 Reset prompt", type="secondary", use_container_width=True):
-                    st.session_state.procurement_brief_textarea = ""
-                    st.session_state.user_prompt_input = ""
-                    st.rerun()
+                st.button("🔄 Reset prompt", type="secondary", on_click=clear_brief, use_container_width=True)
 
             st.markdown("<div class='section-divider'></div>", unsafe_allow_html=True)
             st.markdown("<div style='font-size:0.82rem; font-weight:600; color:#475569; margin-bottom:6px;'>WHAT AI WILL GENERATE:</div>", unsafe_allow_html=True)
