@@ -597,8 +597,28 @@ def main():
                 with get_client() as client:
                     return action(client)
         except Exception as e:
-            # Avoid dumping credential-bearing exception text into a public UI.
-            st.error(f'AI request failed ({type(e).__name__}). No result was committed. Check model access, credentials, quotas and document limits. Configuration details are in README.')
+            code = getattr(e, 'code', 'unknown')
+            message = str(
+                getattr(e, 'message', None) or type(e).__name__
+            )
+
+            # Remove the configured API key if it occurs in the message.
+            api_key = secret('GEMINI_API_KEY')
+            if api_key:
+                message = message.replace(str(api_key), '[REDACTED]')
+
+            # Remove strings that look like Google API keys.
+            message = re.sub(
+                r'AIza[0-9A-Za-z_-]+',
+                '[REDACTED]',
+                message,
+            )
+
+            st.error(
+                f'AI request failed. Code: {code}. '
+                'No result was committed.'
+            )
+            st.code(message[:3000], language=None)
             return None
     def invalidate():
         st.session_state.pop('answer',None)
