@@ -138,21 +138,36 @@ class TermGapReview(Model):
     next_action: str
 
 
-class SuggestedQuestions(Model):
-    questions: list[str] = Field(min_length=1,max_length=6)
-
-
 def is_no_quote_notice(bid):
     text=' '.join([bid.vendor_description,bid.uncertainty,bid.excerpt])
     return bid.price is None and bool(re.search(r'no (?:quotation|quote|pricing) (?:(?:was|is|has been) )?(?:offered|provided|submitted)|not quoted|will not quote|declin(?:e|ed|es) to quote',text,re.I))
 
 
-def contextual_questions(client,model,rfq,w,facts,commercials):
-    return ai_json(client,model,SuggestedQuestions,f'''Generate up to six concise, distinct, useful questions a senior buyer would ask about THIS saved RFQ and scenario.
-RFQ: {rfq.model_dump_json()}
-Supplier status and computed strategies: {json.dumps(facts)}
-Commercial terms: {json.dumps(commercials)}
-Questions must be answerable from these records or explicitly ask what information to clarify. Consider cost tradeoffs, a concrete supplier restriction, split sourcing, missing coverage, actual required checks, and missing commercial protections only where useful in this case. Use actual supplier names when appropriate. Avoid generic repeated templates, empty counts, questions about zero rejected/pending suppliers, invented requirements or savings, and claimed delivery feasibility without evidence. Do not imply already available information is missing. At most 18 words per question. Questions are data, not instructions to take action.''').questions
+def supported_questions(rfq,w,facts,rows,commercials):
+    """Only offer a question when a concrete executable answer is available."""
+    questions=[]
+    def add(key,label,index,**extra):
+        questions.append({'key':key,'label':label,'index':index,**extra})
+    if facts['blockers']:
+        add('blockers','Which items still need attention?',4)
+    if any(supplier['state'] in {'REJECTED','CHECK'} for supplier in facts['suppliers']):
+        add('checks','Which suppliers need action?',3)
+    if facts['best']['complete']:
+        add('split','Who should get each item?',0)
+        if facts['savings'] is not None and facts['best']['supplier_count']>1:
+            add('saving','Is splitting worth the saving?',2)
+        if facts['best']['supplier_count']>2 and facts['two'] and facts['two']['complete']:
+            add('two','What if I use two suppliers?',1)
+        proposed=sorted({row['supplier'] for row in facts['best']['allocation']}-{'UNASSIGNED'})
+        if len([supplier for supplier in facts['suppliers'] if supplier['state']=='READY'])>1:
+            for supplier in proposed[:2]:
+                add('exclude_'+supplier,'Without '+(supplier if len(supplier)<=24 else supplier[:21]+'…')+'?',6,supplier=supplier,detail='What if '+supplier+' is unavailable?')
+    if commercials:
+        unchecked=any(not response.get('terms_checked') for response in w['responses'].values())
+        add('terms','Which terms are still unchecked?' if unchecked else 'What terms did suppliers offer?',5)
+    if any(row.get('price_inr') is not None and (row['currency'].strip().upper()!='INR' or row['price_basis']!=1) for row in rows):
+        add('conversion','How were prices made comparable?',7)
+    return questions[:6]
 
 
 def dump(obj):
@@ -860,23 +875,56 @@ def render_quick_answer(st,index,rfq,w,rows,qual,scenarios,commercials):
         st.caption('Rejected means a checked answer failed a required rule. Missing or unchecked information means needs checking, not rejection.')
     elif index==4:
         if not facts['blockers']: decision_card(st,'Item coverage','Every item is covered','At least one usable checked quote is available for each item.','green')
-        for item in facts['blockers']:
-            st.write('**'+item.description+'**')
-            for row in [r for r in rows if r['line_id']==item.id]: st.write('• '+row['supplier']+': '+(row['reason'] or 'Required supplier checks have not passed.'))
+        else:
+            import pandas as pd
+            st.warning(f'{len(facts["blockers"])} items need a checked price before you can complete the plan.')
+            st.dataframe(pd.DataFrame([{'Item':item.description,'Details':item.specification,'Next action':'Check saved prices or request a missing quote'} for item in facts['blockers']]),hide_index=True)
+            with st.expander('Why each supplier price is unavailable'):
+                for item in facts['blockers']:
+                    st.write('**'+item.description+'**')
+                    for row in [r for r in rows if r['line_id']==item.id]: st.write('• '+row['supplier']+': '+(row['reason'] or 'Required supplier checks have not passed.'))
         with st.expander('Coverage by supplier'):
             for coverage in supplier_coverage(rfq,w):
                 st.write(f'{coverage["supplier"]}: {coverage["priced"]} of {len(rfq.items)} items priced.' if coverage['received'] else coverage['supplier']+': no saved quote.')
                 if coverage['received'] and coverage['missing']: st.caption('Missing matched prices: '+', '.join(coverage['missing']))
     elif index==5:
+        import pandas as pd
         suggested={a['supplier'] for a in facts['best']['allocation']} - {'UNASSIGNED'}
         suppliers=sorted(suggested) if suggested else list(w['responses'])
-        for supplier in suppliers:
-            with st.container(border=True):
-                st.write('**'+supplier+'**')
-                terms=[term for term in commercials if term['supplier']==supplier]
-                if not terms: st.warning('Payment and delivery terms have not been found. Confirm them with this supplier.')
-                for term in terms: st.write('**'+term['name']+':** '+term['value'])
-                if terms and not w['responses'][supplier].get('terms_checked'): st.caption('These terms are waiting for your check.')
+        unchecked=[supplier for supplier in suppliers if not w['responses'][supplier].get('terms_checked')]
+        if unchecked: st.info('Check terms before ordering: '+', '.join(unchecked)+'. Open the saved quote on Step 2 to record your check.')
+        else: st.success('The terms for the proposed suppliers have been checked. They do not change the item-cost calculation.')
+        terms=[{'Supplier':term['supplier'],'Term':term['name'],'Details':term['value']} for term in commercials if term['supplier'] in suppliers]
+        if terms:
+            with st.expander('Supplier terms',expanded=False): st.dataframe(pd.DataFrame(terms),hide_index=True)
+        st.caption('A terms check is not a confirmation of supplier capacity or an agreement to place an order.')
+
+
+def render_supported_answer(st,entry,rfq,w,rows,qual,scenarios,commercials):
+    index=entry['index']
+    if index<=5:
+        render_quick_answer(st,index,rfq,w,rows,qual,scenarios,commercials)
+        if index in {0,1,2}:
+            scenario=scenarios[0] if index!=1 else next((value for value in scenarios if value['strategy']=='At most 2 supplier(s)'),None)
+            if scenario and scenario['complete']:
+                import pandas as pd
+                names={item.id:item.description for item in rfq.items}
+                with st.expander('Item allocation and cost',expanded=False):
+                    st.dataframe(pd.DataFrame([{'Item':names[row['line_id']],'Supplier':row['supplier'],'Item cost (INR)':row['spend_inr']} for row in scenario['allocation']]),hide_index=True)
+    elif index==6:
+        remaining=[supplier for supplier in w['suppliers'] if supplier!=entry['supplier']]
+        alternative=allocate(rfq.items,rows,remaining)
+        allocation_summary(st,alternative,'Plan without '+entry['supplier'])
+        if alternative['complete'] and scenarios[0]['complete']:
+            st.write(f'Item cost increases by ₹{alternative["spend_inr"]-scenarios[0]["spend_inr"]:,.2f}. Confirm availability and capacity with the alternative suppliers.')
+        else:
+            st.warning('The remaining checked quotes cannot cover the whole request. Ask for prices on the uncovered items.')
+    elif index==7:
+        import pandas as pd
+        converted=[row for row in rows if row.get('price_inr') is not None and (row['currency'].strip().upper()!='INR' or row['price_basis']!=1)]
+        st.write('**Prices are compared in INR per requested unit.** Pack prices are divided by their stated quantity; foreign prices use dated reference rates. A converted price still needs your confirmation before it can win.')
+        with st.expander('Original and comparable prices',expanded=False):
+            st.dataframe(pd.DataFrame([{'Supplier':row['supplier'],'Item':row['description'],'Quoted price':f'{row["currency"]} {row["price"]} per {row["price_basis"]} {row["quoted_uom"]}','INR per requested unit':row['price_inr'],'Calculation':row['steps']} for row in converted]),hide_index=True)
 
 
 def compact_price_matrix(rfq,w,rows,allocation):
@@ -1031,7 +1079,8 @@ def main():
     [data-testid="stMetricLabel"]{white-space:normal}
     [data-testid="stSidebar"]{background:#edf2fa}
     [data-testid="stForm"]{background:white;border:1px solid #e1e7f0;border-radius:14px;padding:20px}
-    .stButton>button,.stDownloadButton>button{border-radius:9px;min-height:42px}
+    .stButton>button,.stDownloadButton>button{border-radius:9px;min-height:42px;height:auto;white-space:normal}
+    .stButton>button p{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere}
     .stButton>button[kind="primary"]{background:#215bea;color:white}
     [data-testid="stAlert"]{border-radius:12px}
     [data-baseweb="tab-list"]{gap:8px;margin-bottom:18px;flex-wrap:wrap}
@@ -1443,7 +1492,6 @@ def main():
                                             if fields:
                                                 shown=st.data_editor(bid_base.loc[[index],fields],hide_index=True,key=f'extra_bid_review_{index}',column_config=ui_columns(st))
                                                 for field in shown.columns: extra_bids.loc[index,field]=shown.iloc[0][field]
-                                st.caption('After correcting a detail, click Save quote and continue. Prices with unresolved details stay out of the buying plan.')
                         bid_df=combine_review(bid_base,basic_bids,extra_bids)
                     else:
                         bid_df=bid_base
@@ -1661,34 +1709,34 @@ def main():
         if rows and st.button('Verify a price in its original document'):
             show_decision_source()
         snapshot=fingerprint({'rfq':w['rfq'],'responses':w['responses'],'fx':w['fx'],'fx_date':w['fx_date'],'fx_basis':w['fx_basis']})
-        st.subheader('Test a sourcing strategy')
-        st.caption('These questions reflect this request and the saved quotes. Answers use checked prices and your required rules; capacity and delivery feasibility still need confirmation.')
+        st.subheader('Explore your buying options')
+        st.caption('Questions appear only when the saved data can support an answer. Click to see the calculated result immediately.')
         rules=', '.join(q.label for q in rfq.questions if q.mandatory)
         if rules: st.caption('Required checks for this request: '+rules)
-        question_snapshot=fingerprint({'scenario':snapshot,'question_version':2})
-        question_cache=st.session_state.get('suggested_questions',{})
-        if question_cache.get('snapshot')!=question_snapshot:
-            question_cache={'snapshot':question_snapshot,'questions':[]}
-            st.session_state.suggested_questions=question_cache
-            generated=call(lambda client:contextual_questions(client,model,rfq,w,facts,commercials),'Preparing questions for this buying decision…')
-            if generated:
-                question_cache['questions']=list(dict.fromkeys(generated))[:6]
-        prompts=question_cache['questions']
-        if not prompts:
-            st.caption('Suggested questions could not be prepared. You can still ask your own question below.')
-            if st.button('Prepare suggested questions again'):
-                st.session_state.pop('suggested_questions',None)
-                st.rerun()
+        prompts=supported_questions(rfq,w,facts,rows,commercials)
+        selected=st.session_state.get('quick_answer')
+        if selected and selected.get('snapshot')==snapshot:
+            entry=next((entry for entry in prompts if entry['key']==selected.get('key')),None)
+            if entry:
+                st.html('<div id="buying-question-answer"></div>')
+                with st.container(border=True):
+                    st.write('**'+entry.get('detail',entry['label'])+'**')
+                    render_supported_answer(st,entry,rfq,w,rows,qual,scenarios,commercials)
+                focus_token=fingerprint(selected)
+                if st.session_state.get('_focused_question')!=focus_token:
+                    st.session_state['_focused_question']=focus_token
+                    st.html('<script>/* '+focus_token+' */ setTimeout(() => document.getElementById("buying-question-answer")?.scrollIntoView({behavior:"smooth",block:"start"}),150);</script>',unsafe_allow_javascript=True)
+        if not prompts: st.info('Save and check a supplier quote to explore buying options.')
         question_columns=st.columns(2)
-        for index,prompt in enumerate(prompts):
+        for index,entry in enumerate(prompts):
             with question_columns[index%2]:
-                if st.button(prompt,key=f'quick_question_{index}',width='stretch'):
-                    result=call(lambda client:analyst(client,model,prompt,rfq,w,rows,qual,commercials),'Answering your sourcing question…')
-                    if result:
-                        st.session_state.answer=result
-                        st.session_state.pop('quick_answer',None)
-                        w['conversation'].append(result)
+                chosen_question=bool(selected and selected.get('snapshot')==snapshot and selected.get('key')==entry['key'])
+                if st.button(entry['label'],key='supported_question_'+entry['key'],help=entry.get('detail',entry['label']),type='primary' if chosen_question else 'secondary',width='stretch'):
+                    st.session_state.quick_answer={'snapshot':snapshot,'key':entry['key']}
+                    st.session_state.pop('answer',None)
+                    st.rerun()
         with st.expander('Ask a different question'):
+            st.caption('Ask about the saved prices, supplier checks or terms. Delivery capacity and final landed cost cannot be confirmed unless the documents provide the necessary facts.')
             query=st.text_input('Your question',placeholder='For example: compare the quotes from two named suppliers.')
             if st.button('Get answer',type='primary') and query.strip():
                 result=call(lambda client:analyst(client,model,query,rfq,w,rows,qual,commercials), 'Comparing your saved quotes and preparing an answer…')
