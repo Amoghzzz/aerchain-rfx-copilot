@@ -659,7 +659,7 @@ def main():
         if key:
             return genai.Client(api_key=key,http_options=types.HttpOptions(timeout=120000))
         raise ValueError('Configure GCP_SERVICE_ACCOUNT or GEMINI_API_KEY in Streamlit Secrets. See README.')
-    def call(action):
+    
     def call(action, progress):
         try:
             with st.spinner('Reading your documents…'):
