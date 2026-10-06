@@ -451,7 +451,7 @@ A vendor name mismatch must appear in warnings. This bundle is a REPLACEMENT sup
             b.file=''
             b.uncertainty += ' Invalid source filename.'
         if b.file in texts and b.excerpt and squash(b.excerpt) not in squash(texts[b.file]):
-            b.uncertainty += ' Excerpt does not exactly occur in parsed source; verify manually.'
+            b.uncertainty += ' Check this value in the supplier document—the app could not match the supporting text.'
     ext.answers = [a for a in ext.answers if a.question_id in qids]
     for a in ext.answers:
         a.approved=False
@@ -644,6 +644,14 @@ def main():
     [data-baseweb="tab"]{padding:12px 18px;border-radius:9px;background:white}
     [data-baseweb="tab"][aria-selected="true"]{background:#e8efff;color:#215bea}
     @media(max-width:640px){.block-container{padding-left:1rem;padding-right:1rem}h1{font-size:1.65rem!important}}
+
+    .review-section{padding:14px 18px;margin:18px 0 12px;border-radius:10px;border-left:5px solid;font-weight:650;font-size:1.05rem;line-height:1.5}
+    .review-section small{display:block;font-weight:400;font-size:.9rem;margin-top:3px}
+    .section-prices{background:#edf4ff;color:#153c78;border-color:#2863cb}
+    .section-answers{background:#eaf7f1;color:#17513d;border-color:#278260}
+    .section-terms{background:#f2edfc;color:#50317f;border-color:#8054b5}
+    .section-finish{background:#f0f3f7;color:#25354b;border-color:#687a94}
+    .section-attention{background:#fff4df;color:#73450b;border-color:#d29324}
     </style>''',unsafe_allow_html=True)
     if 'work' not in st.session_state:
         st.session_state.work=empty_workspace()
@@ -883,6 +891,8 @@ def main():
             if p:
                 st.subheader('Check ' + p['supplier'] + '’s quote')
                 ext=Extraction.model_validate(p['extraction'])
+                for bid in ext.bids:
+                    bid.uncertainty=bid.uncertainty.replace('Excerpt does not exactly occur in parsed source; verify manually.','Check this value in the supplier document—the app could not match the supporting text.')
                 st.write('You can edit the prices and answers below. Check them against the supplier quote, then save.')
                 st.caption('You do not need to tick every row. Use the two confirmation boxes at the bottom for clear prices and answers you have checked. Leave unclear values unchecked.')
                 if ext.detected_supplier and squash(ext.detected_supplier)!=squash(p['supplier']):
@@ -896,7 +906,18 @@ def main():
                 if st.button('Open supplier documents'):
                     show_quote_documents()
                 with st.form('review_extraction'):
-                    st.markdown('**1. Check the prices**')
+                    st.markdown('<div class="review-section section-terms">Payment and delivery terms<small>Check these before choosing a supplier. You can correct the details below.</small></div>',unsafe_allow_html=True)
+                    commercial_base=pd.DataFrame([dump(term) for term in ext.commercials],columns=list(Commercial.model_fields))
+                    commercial_df=commercial_base.copy()
+                    if ext.commercials:
+                        commercial_edit=st.data_editor(commercial_base[['name','value']],hide_index=True,key='commercial_review',column_config={'name':st.column_config.Column('Term',width='medium'),'value':st.column_config.Column('Supplier’s terms',width='large')})
+                        for column in commercial_edit.columns: commercial_df[column]=commercial_edit[column].to_numpy()
+                        terms_checked=st.checkbox('I checked the payment and delivery terms',value=bool(p.get('terms_checked',False)))
+                    else:
+                        terms_checked=False
+                        st.info('No payment or delivery terms were found. Ask the supplier to confirm them before placing an order.')
+                    st.caption('These terms are shown for your review. They do not change the item price ranking automatically.')
+                    st.markdown('<div class="review-section section-prices">Check the prices<small>Correct any mistakes, then confirm the prices you checked.</small></div>',unsafe_allow_html=True)
                     price_columns = ['vendor_description','price','currency','quoted_uom','price_basis','approved','review_note']
                     bid_base = pd.DataFrame([dump(b) for b in ext.bids],columns=list(Bid.model_fields))
                     item_names={item.id:item.description for item in rfq.items}
@@ -912,6 +933,7 @@ def main():
                         extra_bids=bid_base[extra_columns].copy()
                         detail_columns=price_detail_columns(ext.bids)
                         if detail_columns:
+                            st.markdown('<div class="review-section section-attention">Some price details need a check<small>Open the details below to check missing information, discounts, or unit conversions.</small></div>',unsafe_allow_html=True)
                             with st.expander('Details that need checking'):
                                 st.caption('Only details relevant to this quote are shown. Rows follow the same order as the prices above.')
                                 shown=st.data_editor(bid_base[detail_columns],hide_index=True,key='extra_bid_review',column_config=ui_columns(st))
@@ -921,7 +943,7 @@ def main():
                         bid_df=bid_base
                         st.warning('No item prices were found. Cancel this review and upload a quote containing prices, or save the supplier answers only.')
                     if rfq.questions:
-                        st.markdown('**2. Check the supplier’s answers**')
+                        st.markdown('<div class="review-section section-answers">Check the supplier’s answers<small>Required answers determine whether the supplier passes your checks.</small></div>',unsafe_allow_html=True)
                         question_names={question.id:question.label for question in rfq.questions}
                         required_ids={question.id for question in rfq.questions if question.mandatory}
                         certificate_ids={question.id for question in rfq.questions if question.rule=='valid_certificate'}
@@ -954,10 +976,7 @@ def main():
                             st.info('No answers were found. Required questions still need answers before this supplier can pass your checks.')
                     else:
                         ans_df=pd.DataFrame([dump(a) for a in ext.answers],columns=list(Answer.model_fields))
-                    if ext.commercials:
-                        with st.expander('Payment and delivery terms found in the quote'):
-                            for term in ext.commercials: st.write(f'**{term.name}:** {term.value}')
-                    st.markdown('**Finish your check**')
+                    st.markdown('<div class="review-section section-finish">Save your review<small>Confirm what you checked. Unchecked prices stay out of the comparison.</small></div>',unsafe_allow_html=True)
                     bulk_note=st.text_input('Short note about what you checked',placeholder='I checked the prices against page 1 of the supplier quote.')
                     st.caption('For a full check, enter one note and tick the boxes below. For a partial check, tick only the rows you checked and add a note beside each.')
                     bulk_bids=st.checkbox('Use all clear prices I checked',disabled=not ext.bids)
@@ -994,6 +1013,8 @@ def main():
                         if bulk_bids:
                             skipped=sum(not b.approved for b in bids)
                             if skipped: st.session_state.review_notice=f'{skipped} prices still need checking and will not be used in the comparison.'
+                        ext.commercials=[Commercial.model_validate(row) for row in json.loads(commercial_df.to_json(orient='records'))]
+                        p['terms_checked']=terms_checked
                         ext.bids=bids
                         ext.answers=answers
                         p['extraction']=dump(ext)
