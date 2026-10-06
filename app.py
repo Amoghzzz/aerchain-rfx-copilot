@@ -521,6 +521,7 @@ def analyst(client,model,question,rfq,w,rows,qual,commercials):
     plan = ai_json(client,model,Plan,f'''Translate the buyer question into one safe analysis operation. Question: {question}
 Suppliers: {w['suppliers']}; RFQ items: {json.dumps([dump(i) for i in rfq.items])}
 Operations: scenarios = optimize cost for full selected scope and supplier cap; bids = raw/normalized comparisons, price spreads; exceptions = unresolved or missing data; qualification = quality evidence; commercials = terms; awards = allocation and why it wins.
+When asked whether a named supplier is cheapest or best, keep other suppliers in the comparison. A supplier mentioned as the subject is not an instruction to exclude competitors. Set suppliers only if the user explicitly restricts the scope (for example, "using only A and B") or asks for that supplier's own quote details.
 Use exact existing supplier names and line_ids; description_contains only when asked. No code/SQL. Unsupported analysis must be described in rationale, not fabricated.''')
     if any(s not in w['suppliers'] for s in plan.suppliers) or any(i not in {x.id for x in rfq.items} for i in plan.line_ids):
         raise ValueError('AI selected unknown supplier or SKU. Ask again using the displayed names.')
@@ -553,10 +554,21 @@ Use exact existing supplier names and line_ids; description_contains only when a
             table.append(copied)
     evidence = filtered + [q for q in qual if q.get('evidence_id') and q['supplier'] in sups] + [c for c in commercials if c['supplier'] in sups]
     evidence_map = {e['evidence_id']:e for e in evidence}
-    explanation = ai_json(client,model,Explanation,f'''Answer the question using ONLY these computed results and evidence.
+    context_table=[{key:value for key,value in row.items() if key not in {'confidence','approved','review_note','origin'}} for row in table]
+    context_evidence=[{key:value for key,value in row.items() if key not in {'confidence','approved','review_note','origin'}} for row in evidence]
+    explanation = ai_json(client,model,Explanation,f'''Answer a senior procurement manager's question using ONLY the computed results and evidence below.
+Write a decision brief, not a transcription of quote rows. The interface displays a compact table separately.
+answer: at most 80 words, directly answer the question first. Do not enumerate items or repeat long specifications. Describe no more than one item as an example unless the user asks for named items.
+findings: at most three short useful points, at most 20 words each. risks: at most two concrete relevant blockers, at most 25 words each. next_action: one short practical step; if no action is needed, say so.
+Use plain English. Never expose internal field names such as price_basis, line_id, numeric_value, or evidence_id. Say 'per 100 pieces', 'per piece', or 'checked price' instead.
+Never interpret an AI confidence score as a measured probability, an error, or a reason to reject a quote. Some confidence values are omitted and default to zero; eligibility comes only from the computed status and required supplier checks.
+When INR unit prices are available, use them for comparison. Currency and price-per-unit conversions are already calculated by this app; do not ask the user to convert all prices manually. If conversion is unavailable, say the affected quote is excluded until a reference rate is available. Never invent a rate.
+Do not claim prices are checked when eligible=false. Clearly distinguish raw quoted values, converted values awaiting checks, usable checked prices, and failed supplier requirements.
+If the question asks whether a supplier is cheapest, evaluate against other eligible suppliers for the same requested items; do not answer by merely listing that supplier's prices.
+If requested information is outside the chosen analysis capability, say what is missing instead of answering a different question.
 Question: {question}; executed plan: {plan.model_dump_json()}
-Verified deterministic result table: {json.dumps(table)}
-Evidence: {json.dumps(evidence)}
+Verified deterministic result table: {json.dumps(context_table)}
+Evidence: {json.dumps(context_evidence)}
 Scenario scope: {len(items)} items; costs are quoted goods prices AFTER unconditional discounts, EXCLUDING tax, freight, duties and time-value of payment terms. Never call this landed cost.
 Missing/partial totals must never be called full totals or savings. No single-supplier benchmark means savings unavailable.
 Do not invent extra calculations or facts. Discuss the result and trade-offs, refer to the table for numeric amounts. Unsupported requests must explicitly say what data or capability is missing.
@@ -625,6 +637,64 @@ def supplier_coverage(rfq,w):
         missing=[item.description for item in rfq.items if item.id not in priced]
         result.append({'supplier':supplier,'received':bool(response),'priced':len(priced),'missing':missing})
     return result
+
+
+def custom_price_figures(answer):
+    records=[]
+    for row in answer['table']:
+        if 'price' not in row: continue
+        original=(f'{row.get("currency","")} {row["price"]:g} per {row["price_basis"]:g} {row.get("quoted_uom","")}' if row.get('price') is not None and row.get('price_basis') is not None else 'Quote needs checking')
+        converted=row.get('price_inr')
+        records.append({'Item':row.get('description',''),'Supplier':row.get('supplier',''),'Supplier quote':original,
+                        'INR per requested unit':f'₹{converted:,.4f}' if converted is not None else 'Conversion unavailable',
+                        'Status':'Usable checked price' if row.get('eligible') else 'Rejected by required checks' if row.get('qualification')=='DISQUALIFIED' else 'Needs checking',
+                        'Reason':row.get('reason','')})
+    return records
+
+
+def render_custom_figures(st,answer,rfq):
+    import pandas as pd
+    operation=answer['plan']['operation']
+    table=answer['table']
+    if operation in {'bids','exceptions'}:
+        records=custom_price_figures(answer)
+        if not records: st.info('No prices match this question.'); return
+        suppliers=sorted({row['Supplier'] for row in records})
+        columns=st.columns(2)
+        with columns[0]: decision_card(st,'Items in this answer',len({row['Item'] for row in records}),', '.join(suppliers),'blue')
+        with columns[1]: decision_card(st,'Usable checked prices',sum(row['Status']=='Usable checked price' for row in records),f'Out of {len(records)} matched price entries.','green')
+        with st.expander('Compare original quotes with INR unit prices',expanded=len(records)<=5):
+            show_all=st.checkbox('Show every price in this answer',key='custom_answer_show_all') if len(records)>8 else True
+            visible=records if show_all else records[:8]
+            st.dataframe(pd.DataFrame(visible),hide_index=True,height=min(330,45+35*len(visible)))
+            if not show_all: st.caption(f'Showing 8 of {len(records)} price entries. Download the figures for the full list.')
+    elif operation=='scenarios':
+        columns=st.columns(min(3,max(1,len(table))))
+        for index,scenario in enumerate(table):
+            with columns[index%len(columns)]:
+                decision_card(st,scenario['strategy'],f'₹{scenario["spend_inr"]:,.2f}' if scenario.get('complete') else 'Not ready',f'{scenario.get("covered",0)} of {scenario.get("total_lines",0)} items covered.','green' if scenario.get('complete') else 'amber')
+    elif operation=='awards':
+        names={item.id:item.description for item in rfq.items}
+        if any(row.get('supplier')=='UNASSIGNED' for row in table):
+            st.warning('This is a partial allocation. Some requested items still have no usable checked quote.')
+        allocations=[row for row in table if row.get('supplier') and row.get('supplier')!='UNASSIGNED']
+        for supplier in sorted({row['supplier'] for row in allocations}):
+            selected=[row for row in allocations if row['supplier']==supplier]
+            decision_card(st,supplier,f'₹{sum(row["spend_inr"] for row in selected):,.2f}',f'{len(selected)} items assigned.','blue')
+        with st.expander('Which items go to each supplier?'):
+            readable=[{'Item':names.get(row.get('line_id'),'Not specified'),'Supplier':row.get('supplier',''),'Item cost':row.get('spend_inr')} for row in allocations]
+            if readable: st.dataframe(pd.DataFrame(readable),hide_index=True,height=260)
+    elif operation=='qualification':
+        for row in table:
+            if 'state' in row:
+                label={'QUALIFIED':'Passed required checks','PENDING':'Needs checking','DISQUALIFIED':'Rejected'}[row['state']]
+                decision_card(st,row['supplier'],label,' '.join(row['reasons']),'red' if row['state']=='DISQUALIFIED' else 'green' if row['state']=='QUALIFIED' else 'amber')
+    elif operation=='commercials':
+        for supplier in sorted({row['supplier'] for row in table}):
+            with st.container(border=True):
+                st.write('**'+supplier+'**')
+                for row in table:
+                    if row['supplier']==supplier: st.write('**'+row['name']+':** '+row['value'])
 
 
 def decision_facts(rfq,w,rows,qual,scenarios):
@@ -1440,13 +1510,18 @@ def main():
         if answer and answer['snapshot']==snapshot:
             with st.container(border=True):
                 explanation=answer['explanation']
+                st.markdown('**'+answer['question']+'**')
+                st.markdown('<div class="review-section section-prices">Conclusion</div>',unsafe_allow_html=True)
                 st.write(explanation['answer'])
-                for risk in explanation['risks']: st.warning(risk)
-                st.write('Next step: ' + explanation['next_action'])
-                with st.expander('See the supporting figures'):
-                    if answer['table']: st.dataframe(pd.DataFrame(answer['table']),hide_index=True)
-                    for finding in explanation['findings']: st.write('• ' + finding)
-                st.download_button('Download answer table',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
+                render_custom_figures(st,answer,rfq)
+                if explanation['findings']:
+                    st.markdown('**What matters**')
+                    for finding in explanation['findings'][:3]: st.write('• ' + finding)
+                for risk in explanation['risks'][:2]: st.warning(risk)
+                st.markdown('**Next step**')
+                st.write(explanation['next_action'])
+                with st.popover('Download answer figures'):
+                    st.download_button('Answer table (CSV)',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
         with st.popover('Currency details'):
             if not currencies: st.write('All quoted currencies are INR. No conversion is needed.')
             else:
