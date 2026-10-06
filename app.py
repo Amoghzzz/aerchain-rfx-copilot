@@ -692,10 +692,11 @@ def main():
                 st.rerun()
             except Exception as e:
                 st.error(f'Could not open this backup: {e}')
-        start_over=st.checkbox('I saved a backup and want to clear this request.',key='confirm_reset')
-        if st.button('Start a new request',disabled=not start_over):
-            st.session_state.clear()
-            st.rerun()
+        with st.expander('Clear this request and start again'):
+            start_over=st.checkbox('I saved a backup and want to clear this request.',key='confirm_reset')
+            if st.button('Start a new request',disabled=not start_over):
+                st.session_state.clear()
+                st.rerun()
     if st.session_state.pending:
         next_step = 'Check the prices and supplier answers in Step 2, then save this quote.'
         stage = 'Check the uploaded quote'
@@ -724,70 +725,72 @@ def main():
     # Tabs render together, but all mutations are gated explicitly.
     create_tab,response_tab,decision_tab=st.tabs(['1 · Create request','2 · Add supplier quotes','3 · Compare quotes'])
     with create_tab:
-        st.subheader('What do you want to buy?')
-        st.caption('Describe the items, quantities, and delivery location. The AI will make a draft for you to check.')
-        brief=st.text_area('Describe your requirement',height=170,key='brief',placeholder='I need 100 cardboard boxes, 30 × 20 × 15 cm, delivered to Bhiwandi. Suppliers must have ISO 9001 certification.')
-        req_files=st.file_uploader('Add an item list or document (optional)',type=['pdf','xlsx','docx','png','jpg','txt','csv'],accept_multiple_files=True,key='reqfiles')
-        if st.button('Create my draft',type='primary',disabled=w['published'] or bool(w['responses']) or st.session_state.pending is not None):
-            if not brief.strip() and not req_files:
-                st.warning('Describe what you need or upload a document first.')
-            else:
-                def generate(client):
-                    parts=prepare_sources([{'name':f.name,'data':f.getvalue()} for f in req_files])[0] if req_files else []
-                    return ai_json(client,model,RFQ,f'''Create an editable RFQ from this brief and attachments: {brief}
-Do not use category-specific fixed datasets. Preserve exact supplied specs, quantities, locations, terms. Assign stable ITEM-001 IDs and Q-001 question IDs.
-Only mark USER PROVIDED if explicitly stated. Missing quantity=null. Suggested SKUs/specs/questions/terms are AI SUGGESTED. Do not invent target prices, deadlines or commercial requirements.
-If user only provides a count, you may propose that many distinct SKUs but clearly mark AI SUGGESTED. Ask for missing important facts in open_questions.
-Draft a relevant questionnaire. Mandatory rules only when explicitly requested. Defect thresholds use numeric percentage points and unit "%". Certificates use valid_certificate rule. Always list unresolved assumptions.''',parts)
-                result=call(generate)
-                if result:
-                    w['rfq']=dump(result)
-                    record(w,'RFQ generated','AI-generated draft; buyer confirmation pending')
-                    invalidate()
-                    st.rerun()
+        with st.expander('Describe what you need', expanded=not w['published']):
+            st.subheader('What do you want to buy?')
+            st.caption('Describe the items, quantities, and delivery location. The AI will make a draft for you to check.')
+            brief=st.text_area('Describe your requirement',height=170,key='brief',placeholder='I need 100 cardboard boxes, 30 × 20 × 15 cm, delivered to Bhiwandi. Suppliers must have ISO 9001 certification.')
+            req_files=st.file_uploader('Add an item list or document (optional)',type=['pdf','xlsx','docx','png','jpg','txt','csv'],accept_multiple_files=True,key='reqfiles')
+            if st.button('Create my draft',type='primary',disabled=w['published'] or bool(w['responses']) or st.session_state.pending is not None):
+                if not brief.strip() and not req_files:
+                    st.warning('Describe what you need or upload a document first.')
+                else:
+                    def generate(client):
+                        parts=prepare_sources([{'name':f.name,'data':f.getvalue()} for f in req_files])[0] if req_files else []
+                        return ai_json(client,model,RFQ,f'''Create an editable RFQ from this brief and attachments: {brief}
+    Do not use category-specific fixed datasets. Preserve exact supplied specs, quantities, locations, terms. Assign stable ITEM-001 IDs and Q-001 question IDs.
+    Only mark USER PROVIDED if explicitly stated. Missing quantity=null. Suggested SKUs/specs/questions/terms are AI SUGGESTED. Do not invent target prices, deadlines or commercial requirements.
+    If user only provides a count, you may propose that many distinct SKUs but clearly mark AI SUGGESTED. Ask for missing important facts in open_questions.
+    Draft a relevant questionnaire. Mandatory rules only when explicitly requested. Defect thresholds use numeric percentage points and unit "%". Certificates use valid_certificate rule. Always list unresolved assumptions.''',parts)
+                    result=call(generate)
+                    if result:
+                        w['rfq']=dump(result)
+                        record(w,'RFQ generated','AI-generated draft; buyer confirmation pending')
+                        invalidate()
+                        st.rerun()
         if w['rfq']:
             rfq=RFQ.model_validate(w['rfq'])
             if w['published']:
                 st.success('Your request is ready. Add supplier names below, then download the email and request to send to them.')
                 st.caption('Editing is now locked so every quote uses the same items and requirements. To change them, save a backup and start a new request.')
-            with st.form('edit_rfq'):
-                title=st.text_input('Request title',rfq.title,disabled=w['published'])
-                scope=st.text_area('What the supplier should provide',rfq.scope,disabled=w['published'])
-                st.markdown('**Items to buy**')
-                edited=st.data_editor(pd.DataFrame([dump(i) for i in rfq.items]),hide_index=True,num_rows='dynamic',disabled=w['published'],key='items_editor',column_config=ui_columns(st))
-                st.markdown('**Questions for suppliers**')
-                st.caption('For required checks, choose what counts as a pass. For example: a valid certificate or delivery within 10 days.')
-                qs=st.data_editor(pd.DataFrame([dump(q) for q in rfq.questions],columns=list(Question.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='questions_editor',column_config=ui_columns(st))
-                st.markdown('**Payment, delivery, and other terms**')
-                terms=st.data_editor(pd.DataFrame([dump(t) for t in rfq.terms],columns=list(Term.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='terms_editor',column_config=ui_columns(st))
-                confirm=st.checkbox('I have checked the items, quantities, supplier questions, and terms.',disabled=w['published'])
-                save=st.form_submit_button('Save draft',disabled=w['published'])
-                publish=st.form_submit_button('Finish request & prepare invitations',type='primary',disabled=w['published'])
-            if save or publish:
-                try:
-                    def records(df):
-                        return json.loads(df.to_json(orient='records'))
-                    candidate=RFQ(title=title,scope=scope,items=records(edited),questions=records(qs),terms=records(terms),open_questions=rfq.open_questions)
-                    errors=validate_rfq(candidate)
-                    if publish and not confirm: errors.append('Please tick the box to confirm you checked the draft.')
-                    if errors:
-                        st.error(' '.join(errors))
-                    else:
-                        if confirm:
-                            for x in candidate.items+candidate.questions+candidate.terms: x.origin='BUYER CONFIRMED'
-                        w['rfq']=dump(candidate)
-                        w['published']=bool(publish)
-                        record(w,'RFQ published' if publish else 'RFQ draft saved',fingerprint(w['rfq']))
-                        invalidate()
-                        st.rerun()
-                except Exception as e:
-                    st.error(f'Please check the draft: {e}')
+            with st.expander('Your request details', expanded=not w['published']):
+                with st.form('edit_rfq'):
+                    title=st.text_input('Request title',rfq.title,disabled=w['published'])
+                    scope=st.text_area('What the supplier should provide',rfq.scope,disabled=w['published'])
+                    st.markdown('**Items to buy**')
+                    edited=st.data_editor(pd.DataFrame([dump(i) for i in rfq.items]),hide_index=True,num_rows='dynamic',disabled=w['published'],key='items_editor',column_config=ui_columns(st),column_order=['id','description','specification','quantity','uom','location'])
+                    st.markdown('**Questions for suppliers**')
+                    st.caption('For required checks, choose what counts as a pass. For example: a valid certificate or delivery within 10 days.')
+                    qs=st.data_editor(pd.DataFrame([dump(q) for q in rfq.questions],columns=list(Question.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='questions_editor',column_config=ui_columns(st),column_order=['id','label','mandatory','rule','threshold','unit'])
+                    st.markdown('**Payment, delivery, and other terms**')
+                    terms=st.data_editor(pd.DataFrame([dump(t) for t in rfq.terms],columns=list(Term.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='terms_editor',column_config=ui_columns(st),column_order=['name','value'])
+                    confirm=st.checkbox('I have checked the items, quantities, supplier questions, and terms.',disabled=w['published'])
+                    save=st.form_submit_button('Save draft',disabled=w['published'])
+                    publish=st.form_submit_button('Finish request & prepare invitations',type='primary',disabled=w['published'])
+                if save or publish:
+                    try:
+                        def records(df):
+                            return json.loads(df.to_json(orient='records'))
+                        candidate=RFQ(title=title,scope=scope,items=records(edited),questions=records(qs),terms=records(terms),open_questions=rfq.open_questions)
+                        errors=validate_rfq(candidate)
+                        if publish and not confirm: errors.append('Please tick the box to confirm you checked the draft.')
+                        if errors:
+                            st.error(' '.join(errors))
+                        else:
+                            if confirm:
+                                for x in candidate.items+candidate.questions+candidate.terms: x.origin='BUYER CONFIRMED'
+                            w['rfq']=dump(candidate)
+                            w['published']=bool(publish)
+                            record(w,'RFQ published' if publish else 'RFQ draft saved',fingerprint(w['rfq']))
+                            invalidate()
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f'Please check the draft: {e}')
             if rfq.open_questions:
                 with st.expander('Details you still need to check'):
                     for q in rfq.open_questions: st.write('• '+q)
             st.download_button('Download request to send (TXT)',request_text(rfq),'supplier_request.txt','text/plain')
-            st.download_button('Download request data (JSON)',rfq.model_dump_json(indent=2),'RFQ.json','application/json')
-            st.download_button('Download item list (CSV)',csv_bytes([dump(i) for i in rfq.items]),'RFQ_items.csv','text/csv')
+            with st.expander('Download the item list separately (optional)'):
+                st.download_button('Download item list (CSV)',csv_bytes([dump(i) for i in rfq.items]),'RFQ_items.csv','text/csv')
         if w['published']:
             suppliers=st.text_area('Supplier names — one on each line',value='\n'.join(w['suppliers']),key='supplier_names')
             if st.button('Save suppliers',disabled=bool(w['responses']) or st.session_state.pending is not None):
@@ -984,7 +987,12 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
         else:
             st.success('Every item has a usable quote. Check payment and delivery terms before choosing suppliers.')
         st.caption(f'Prices cover items only, excluding delivery charges, taxes, and duties. Exchange rate date: {w["fx_date"]}; {w["fx_basis"]}. You still need to confirm certificates are genuine.')
-        ex_tab,matrix_tab,q_tab,scenario_tab,evidence_tab=st.tabs(['Needs attention','Prices by supplier','Checks & terms','Buying options','Source documents'])
+        st.subheader('Prices by supplier')
+        matrix_tab=st.container()
+        ex_tab=st.expander('Prices and supplier checks needing attention', expanded=bool(exceptions) or any(q.get('state') in {'PENDING','DISQUALIFIED'} for q in qual))
+        q_tab=st.expander('Supplier checks and payment terms')
+        scenario_tab=st.expander('Compare buying from one supplier or several')
+        evidence_tab=st.expander('View price calculations and source documents')
         with ex_tab:
             st.dataframe(pd.DataFrame(exceptions)[['supplier','line_id','status','reason','uncertainty','file','locator']] if exceptions else pd.DataFrame(),hide_index=True)
             for q in qual:
@@ -1054,9 +1062,10 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                 st.json(answer['plan'])
                 st.dataframe(pd.DataFrame(answer['evidence']),hide_index=True)
             st.download_button('Download answer table',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
-        st.download_button('Download prices and source details',csv_bytes(rows),'comparison_audit.csv','text/csv')
-        st.download_button('Download questions and answers',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
-        st.download_button('Download activity history',json.dumps(w['events'],indent=2),'audit_events.json','application/json')
+        with st.expander('Extra downloads (optional)'):
+            st.download_button('Download prices and source details',csv_bytes(rows),'comparison_audit.csv','text/csv')
+            st.download_button('Download questions and answers',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
+            st.download_button('Download activity history',json.dumps(w['events'],indent=2),'audit_events.json','application/json')
 
 
 def render_sources(st, files, key):
