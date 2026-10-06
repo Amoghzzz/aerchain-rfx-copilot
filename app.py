@@ -571,17 +571,35 @@ Return evidence_ids chosen only from the evidence map. No generic recommendation
 
 
 def fetch_reference_rate(currency):
-    from urllib.request import urlopen
-    if not re.fullmatch(r'[A-Z]{3}',currency):
-        raise ValueError('Invalid currency code')
-    endpoint=f'https://api.frankfurter.dev/v2/rate/{currency}/INR'
-    with urlopen(endpoint,timeout=8) as response:
-        result=json.loads(response.read())
-    rate=number(result.get('rate'))
-    date=dt.date.fromisoformat(result['date'])
-    if rate is None or rate<=0 or result.get('base','').upper()!=currency or result.get('quote','').upper()!='INR' or date>dt.date.today():
-        raise ValueError('Invalid reference rate')
-    return {'rate':float(rate),'date':date.isoformat(),'source':endpoint}
+    from urllib.request import Request,urlopen
+    from email.utils import parsedate_to_datetime
+    if not re.fullmatch(r'[A-Z]{3}',currency): raise ValueError('Invalid currency code')
+    sources=[('Frankfurter',f'https://api.frankfurter.dev/v2/rate/{currency}/INR','v2'),
+             ('Frankfurter',f'https://api.frankfurter.dev/v1/latest?base={currency}&symbols=INR','v1'),
+             ('ExchangeRate-API',f'https://open.er-api.com/v6/latest/{currency}','backup')]
+    for provider,endpoint,kind in sources:
+        try:
+            request=Request(endpoint,headers={'User-Agent':'SupplierQuoteWorkspace/1.0','Accept':'application/json'})
+            with urlopen(request,timeout=5) as response: result=json.loads(response.read())
+            if kind=='v2':
+                rate=number(result.get('rate'))
+                date=dt.date.fromisoformat(result['date'])
+                base=result.get('base','').upper()
+                if result.get('quote','').upper()!='INR': continue
+            elif kind=='v1':
+                rate=number(result.get('rates',{}).get('INR'))
+                date=dt.date.fromisoformat(result['date'])
+                base=result.get('base','').upper()
+            else:
+                if result.get('result')!='success': continue
+                rate=number(result.get('rates',{}).get('INR'))
+                date=parsedate_to_datetime(result['time_last_update_utc']).date()
+                base=result.get('base_code','').upper()
+            if rate is None or rate<=0 or base!=currency or date>dt.date.today() or (dt.date.today()-date).days>10: continue
+            return {'rate':float(rate),'date':date.isoformat(),'source':endpoint,'provider':provider}
+        except Exception:
+            continue
+    raise ValueError('Reference rate temporarily unavailable')
 
 
 def bid_review_issues(bid,items,fx):
@@ -609,54 +627,142 @@ def supplier_coverage(rfq,w):
     return result
 
 
-def render_quick_answer(st,index,rfq,w,rows,qual,scenarios,commercials):
+def decision_facts(rfq,w,rows,qual,scenarios):
+    qualification={q['supplier']:q for q in qual if 'state' in q}
+    suppliers=[]
+    for supplier in w['suppliers']:
+        q=qualification.get(supplier)
+        eligible=sum(r['supplier']==supplier and r['eligible'] for r in rows)
+        if not q: state,reasons='AWAITING',['No quote has been saved yet.']
+        elif q['state']=='DISQUALIFIED': state,reasons='REJECTED',q['reasons']
+        elif q['state']=='PENDING': state,reasons='CHECK',q['reasons']
+        elif not eligible: state,reasons='CHECK',['Required checks passed, but no item price is ready to use.']
+        else: state,reasons='READY',[f'{eligible} of {len(rfq.items)} items have usable checked prices.']
+        suppliers.append({'supplier':supplier,'state':state,'reasons':reasons,'eligible':eligible})
     best=scenarios[0]
-    if index==0:
-        if not best['complete']: st.warning(f'A complete plan is not ready: {best["covered"]} of {best["total_lines"]} items have usable prices.')
-        else: st.write(f'The lowest checked item cost is ₹{best["spend_inr"]:,.2f}, using {best["supplier_count"]} supplier(s). Delivery, taxes, and duties are extra.')
-        for supplier in sorted({a['supplier'] for a in best['allocation']} - {'UNASSIGNED'}):
-            allocated=[a for a in best['allocation'] if a['supplier']==supplier]
-            st.write(f'{supplier}: {len(allocated)} items, ₹{sum(a["spend_inr"] for a in allocated):,.2f}.')
-    elif index==1:
-        single=next((scenario for scenario in scenarios if scenario['strategy']=='At most 1 supplier(s)'),None)
-        if single and single['complete']:
-            supplier=single['allocation'][0]['supplier']
-            st.write(f'Yes. {supplier} can cover every item for ₹{single["spend_inr"]:,.2f}, based on checked prices and your required supplier checks.')
-            if best['complete']: st.write(f'Compared with the cheapest split across suppliers, this costs ₹{single["spend_inr"]-best["spend_inr"]:,.2f} more in item prices.')
-        else: st.write('No complete single-supplier option is ready from the checked quotes.')
-    elif index==2:
-        count=0
-        for item in rfq.items:
-            options=[row for row in rows if row['line_id']==item.id]
-            if not any(row['eligible'] for row in options):
-                count+=1
-                st.write('**'+item.description+'**')
-                for row in options: st.write(row['supplier']+': '+(row['reason'] or 'Required supplier checks have not passed.'))
-        if not count: st.write('Every requested item has at least one usable checked quote.')
-    elif index==3:
-        states={q['supplier']:q for q in qual if 'state' in q}
-        for supplier in w['suppliers']:
-            state=states.get(supplier)
-            if not state: st.write(supplier+': no saved quote yet.')
-            else:
-                label={'QUALIFIED':'Passed','PENDING':'Needs checking','DISQUALIFIED':'Not passed'}[state['state']]
-                st.write('**'+supplier+': '+label+'**')
-                if state['state']!='QUALIFIED':
-                    for reason in state['reasons']: st.write('• '+reason)
-    elif index==4:
-        for coverage in supplier_coverage(rfq,w):
-            if not coverage['received']: st.write(coverage['supplier']+': no quote saved yet.')
-            else:
-                st.write(f'{coverage["supplier"]}: prices found for {coverage["priced"]} of {len(rfq.items)} requested items.')
-                if coverage['missing']: st.caption('No matched price found: '+', '.join(coverage['missing']))
-        st.caption('This counts matched prices found in saved quotes. A price can still need checking before it is used.')
-    elif index==5:
-        for supplier in w['suppliers']:
-            terms=[term for term in commercials if term['supplier']==supplier]
+    single=next((x for x in scenarios if x['strategy']=='At most 1 supplier(s)'),None)
+    two=next((x for x in scenarios if x['strategy']=='At most 2 supplier(s)'),None)
+    if two is None and len(w['suppliers']) == 1:
+        two=single
+    savings=round(single['spend_inr']-best['spend_inr'],2) if single and single['complete'] and best['complete'] else None
+    blockers=[item for item in rfq.items if not any(r['line_id']==item.id and r['eligible'] for r in rows)]
+    return {'suppliers':suppliers,'best':best,'single':single,'two':two,'savings':savings,'blockers':blockers}
+
+
+def decision_card(st,title,value,description,tone='blue'):
+    st.markdown('<div class="decision-card '+tone+'"><div class="card-title">'+html.escape(title)+'</div><strong>'+html.escape(str(value))+'</strong><p>'+html.escape(description)+'</p></div>',unsafe_allow_html=True)
+
+
+def supplier_decision_cards(st,facts):
+    groups=[('READY','Ready to compare','green'),('REJECTED','Rejected by your requirements','red'),('CHECK','Still need checking','amber')]
+    columns=st.columns(3)
+    for column,(state,title,tone) in zip(columns,groups):
+        with column:
+            matches=[supplier for supplier in facts['suppliers'] if supplier['state']==state]
+            body=''.join('<div class="supplier-result"><b>'+html.escape(supplier['supplier'])+'</b><ul>'+''.join('<li>'+html.escape(reason)+'</li>' for reason in supplier['reasons'])+'</ul></div>' for supplier in matches)
+            if not matches: body='<p>None at this stage.</p>'
+            st.markdown('<div class="decision-card '+tone+'"><div class="card-title">'+html.escape(title)+'</div>'+body+'</div>',unsafe_allow_html=True)
+    waiting=[supplier['supplier'] for supplier in facts['suppliers'] if supplier['state']=='AWAITING']
+    if waiting: st.caption('Still waiting for quotes: '+', '.join(waiting))
+
+
+def allocation_summary(st,scenario,title):
+    if not scenario or not scenario['complete']:
+        decision_card(st,title,'Not ready','No checked option covers every item under this supplier limit.','amber')
+        return
+    decision_card(st,title,f'₹{scenario["spend_inr"]:,.2f}',f'All {scenario["total_lines"]} items · {scenario["supplier_count"]} supplier(s) · item prices only.','green')
+    suppliers=sorted({a['supplier'] for a in scenario['allocation']})
+    columns=st.columns(min(3,max(1,len(suppliers))))
+    for index,supplier in enumerate(suppliers):
+        allocations=[a for a in scenario['allocation'] if a['supplier']==supplier]
+        spend=sum(a['spend_inr'] for a in allocations)
+        with columns[index%len(columns)]:
             st.write('**'+supplier+'**')
-            if not terms: st.write('No terms saved. Ask the supplier to confirm payment and delivery details.')
-            for term in terms: st.write(term['name']+': '+term['value'])
-            if terms and not w['responses'][supplier].get('terms_checked'): st.caption('These terms have not been marked as checked.')
+            st.write(f'{len(allocations)} items · ₹{spend:,.2f}')
+            st.progress(spend/scenario['spend_inr'] if scenario['spend_inr'] else 0)
+    st.caption('Bars show each supplier’s share of the item cost.')
+
+
+def render_quick_answer(st,index,rfq,w,rows,qual,scenarios,commercials):
+    facts=decision_facts(rfq,w,rows,qual,scenarios)
+    if index==0:
+        allocation_summary(st,facts['best'],'Lowest-cost checked split')
+        if facts['best']['complete']: st.write('Next step: confirm delivery capacity and payment terms with the selected suppliers before placing orders.')
+    elif index==1:
+        allocation_summary(st,facts['two'],'Best option using at most two suppliers')
+        if facts['two'] and facts['two']['complete'] and facts['best']['complete']:
+            extra=round(facts['two']['spend_inr']-facts['best']['spend_inr'],2)
+            st.write(f'This costs ₹{extra:,.2f} more than the lowest-cost checked split. It may reduce the number of suppliers you need to manage.')
+    elif index==2:
+        columns=st.columns(2)
+        with columns[0]: allocation_summary(st,facts['single'],'One supplier')
+        with columns[1]: allocation_summary(st,facts['best'],'Lowest-cost checked split')
+        if facts['savings'] is not None:
+            decision_card(st,'Item-cost saving from splitting',f'₹{facts["savings"]:,.2f}','Compared with the cheapest checked supplier that can cover every item.','green')
+        else: st.info('A full single-supplier benchmark is unavailable, so a saving cannot be calculated.')
+    elif index==3:
+        supplier_decision_cards(st,facts)
+        st.caption('Rejected means a checked answer failed a required rule. Missing or unchecked information means needs checking, not rejection.')
+    elif index==4:
+        if not facts['blockers']: decision_card(st,'Item coverage','Every item is covered','At least one usable checked quote is available for each item.','green')
+        for item in facts['blockers']:
+            st.write('**'+item.description+'**')
+            for row in [r for r in rows if r['line_id']==item.id]: st.write('• '+row['supplier']+': '+(row['reason'] or 'Required supplier checks have not passed.'))
+        with st.expander('Coverage by supplier'):
+            for coverage in supplier_coverage(rfq,w):
+                st.write(f'{coverage["supplier"]}: {coverage["priced"]} of {len(rfq.items)} items priced.' if coverage['received'] else coverage['supplier']+': no saved quote.')
+                if coverage['received'] and coverage['missing']: st.caption('Missing matched prices: '+', '.join(coverage['missing']))
+    elif index==5:
+        suggested={a['supplier'] for a in facts['best']['allocation']} - {'UNASSIGNED'}
+        suppliers=sorted(suggested) if suggested else list(w['responses'])
+        for supplier in suppliers:
+            with st.container(border=True):
+                st.write('**'+supplier+'**')
+                terms=[term for term in commercials if term['supplier']==supplier]
+                if not terms: st.warning('Payment and delivery terms have not been found. Confirm them with this supplier.')
+                for term in terms: st.write('**'+term['name']+':** '+term['value'])
+                if terms and not w['responses'][supplier].get('terms_checked'): st.caption('These terms are waiting for your check.')
+
+
+def compact_price_matrix(rfq,w,rows,allocation):
+    import pandas as pd
+    data=[]
+    styles=[]
+    for item in rfq.items:
+        line={'Item':item.description,'Quantity':f'{item.quantity:g} {item.uom}'}
+        style={key:'' for key in line}
+        eligible=[r for r in rows if r['line_id']==item.id and r['eligible']]
+        lowest=min((r['price_inr'] for r in eligible),default=None)
+        for supplier in w['suppliers']:
+            row=next((r for r in rows if r['line_id']==item.id and r['supplier']==supplier),None)
+            if row and row['eligible']:
+                tied=lowest is not None and abs(row['price_inr']-lowest)<1e-9
+                line[supplier]=f'₹{row["price_inr"]:,.2f}'+(' ★' if tied else '')
+                style[supplier]='background-color:#dcf5e7;color:#125936;font-weight:700' if tied else ''
+            elif row and row['qualification']=='DISQUALIFIED':
+                line[supplier]='Rejected'
+                style[supplier]='background-color:#fff0f0;color:#973b3b'
+            elif row and row['price'] is not None:
+                line[supplier]='Needs checking'
+                style[supplier]='background-color:#fff5e3;color:#855b15'
+            else:
+                line[supplier]='Not priced' if row else 'Awaiting quote'
+                style[supplier]='color:#6b7280'
+        winner=next(a for a in allocation if a['line_id']==item.id)
+        line['Suggested supplier']=winner['supplier'] if winner['supplier']!='UNASSIGNED' else 'Not ready'
+        style['Suggested supplier']=''
+        data.append(line)
+        styles.append(style)
+    frame=pd.DataFrame(data)
+    return frame,pd.DataFrame(styles).reindex(columns=frame.columns).fillna('')
+
+
+def render_price_grid(st,frame,styles):
+    header=''.join('<th>'+html.escape(str(column))+'</th>' for column in frame.columns)
+    body=''
+    for index,row in frame.iterrows():
+        body+='<tr>'+''.join('<td style="'+html.escape(str(styles.loc[index,column]),quote=True)+'">'+html.escape(str(row[column]))+'</td>' for column in frame.columns)+'</tr>'
+    st.markdown('<div class="price-grid"><table><thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody></table></div>',unsafe_allow_html=True)
 
 
 def clean_internal_id_warning(bid,rfq):
@@ -793,6 +899,22 @@ def main():
     .next-action p{color:white;margin:0;line-height:1.6}
     .summary-panel{background:#edf4ff;border-left:5px solid #2863cb;border-radius:12px;padding:20px;margin:12px 0}
     .summary-panel strong{font-size:1.35rem;color:#153c78}
+
+    .decision-card{border:1px solid #dce5f0;border-top:4px solid #2863cb;background:#fff;border-radius:12px;padding:16px;margin:8px 0 14px;min-height:125px}
+    .decision-card .card-title{font-size:.86rem;font-weight:650;margin-bottom:8px}
+    .decision-card strong{font-size:1.55rem;line-height:1.3;display:block}
+    .decision-card p{font-size:.88rem;line-height:1.55;margin:8px 0 0}
+    .decision-card.green{background:#effaf4;border-color:#5fba88;color:#184e33}
+    .decision-card.red{background:#fff2f2;border-color:#dc8585;color:#803232}
+    .decision-card.amber{background:#fff8ea;border-color:#d5ac56;color:#765118}
+    .decision-card.blue{background:#f0f5ff;border-color:#7199d8;color:#173e79}
+    .supplier-result{margin-top:12px;font-size:.9rem}
+    .supplier-result ul{padding-left:18px;margin:5px 0;line-height:1.55}
+    .price-grid{max-height:340px;overflow:auto;border:1px solid #dce5f0;border-radius:10px;margin:10px 0}
+    .price-grid table{width:100%;border-collapse:collapse;background:white;font-size:.84rem}
+    .price-grid th{position:sticky;top:0;background:#edf2fa;color:#253a58;text-align:left;padding:10px 12px;border-bottom:1px solid #dce5f0;white-space:nowrap;z-index:1}
+    .price-grid td{padding:9px 12px;border-bottom:1px solid #edf0f5;white-space:nowrap}
+    .price-grid td:first-child{white-space:normal;min-width:150px;max-width:260px}
     </style>''',unsafe_allow_html=True)
     if 'work' not in st.session_state:
         st.session_state.work=empty_workspace()
@@ -1217,7 +1339,7 @@ def main():
         currencies=sorted({str(b.get('currency','')).strip().upper() for response in w['responses'].values() for b in response['extraction']['bids']} - {'','INR'})
         missing_rates=[currency for currency in currencies if currency not in w['fx']]
         if missing_rates:
-            attempt_key=fingerprint(missing_rates)
+            attempt_key=fingerprint({'currencies':missing_rates,'sources_version':3})
             if st.session_state.get('fx_attempt') != attempt_key:
                 st.session_state.fx_attempt=attempt_key
                 with st.spinner('Getting reference exchange rates…'):
@@ -1227,45 +1349,74 @@ def main():
                             w['fx'][currency]=reference['rate']
                             w.setdefault('fx_reference',{})[currency]=reference
                             w['fx_date']=reference['date']
-                            w['fx_basis']='Daily reference rates from Frankfurter; planning estimates, excluding bank fees.'
+                            w['fx_basis']='Dated reference rates from '+reference.get('provider','Frankfurter')+'; planning estimates, excluding bank fees.'
                             record(w,'Reference exchange rate loaded',{'currency':currency,**reference})
                             invalidate()
                         except Exception:
                             pass
             still_missing=[currency for currency in currencies if currency not in w['fx']]
-            if still_missing: st.warning('Could not get rates for ' + ', '.join(still_missing) + '. Enter a rate under Currency details to include these prices.')
         rows,qual,commercials=build_dataset(rfq,w['responses'],w['fx'])
-        scenarios=scenario_engine(rfq.items,rows,w['suppliers'])
+        scenarios=scenario_engine(rfq.items,rows,w['suppliers'],max_suppliers=max(1,len(w['suppliers'])))
         split=scenarios[0]
         exceptions=[row for row in rows if not row['eligible']]
-        st.subheader('What your quotes tell you')
-        if split['complete']:
-            st.markdown('<div class="summary-panel"><strong>Lowest checked item cost: ₹' + f'{split["spend_inr"]:,.2f}' + '</strong><p>All ' + str(len(rfq.items)) + ' requested items can be covered by ' + str(split['supplier_count']) + ' supplier(s) that pass your required checks.</p></div>',unsafe_allow_html=True)
+        facts=decision_facts(rfq,w,rows,qual,scenarios)
+        st.subheader('Your supplier decision')
+        supplier_decision_cards(st,facts)
+        st.caption('Only checked prices from suppliers passing your required rules can win an item. Missing information is not treated as a failed requirement.')
+        st.subheader('Choose how to buy')
+        strategy_columns=st.columns(3)
+        options=[('One supplier',facts['single']),('Up to two suppliers',facts['two']),('Lowest-cost split',facts['best'])]
+        for column,(label,scenario) in zip(strategy_columns,options):
+            with column:
+                if scenario and scenario['complete']:
+                    decision_card(st,label,f'₹{scenario["spend_inr"]:,.2f}',f'All {len(rfq.items)} items · {scenario["supplier_count"]} supplier(s).','green' if label=='Lowest-cost split' else 'blue')
+                else:
+                    decision_card(st,label,'Not ready','No checked option covers every requested item.','amber')
+        if facts['savings'] is not None:
+            st.success(f'The lowest-cost split saves ₹{facts["savings"]:,.2f} in item prices compared with the cheapest supplier that covers everything.')
+        elif not split['complete']:
+            st.warning(f'{len(facts["blockers"])} items still have no usable checked price. A complete buying recommendation is not ready.')
         else:
-            st.warning(f'{split["covered"]} of {len(rfq.items)} items have a usable, checked price. You cannot compare a complete purchase yet.')
-            st.write(f'₹{split["spend_inr"]:,.2f} covers only those {split["covered"]} items. It is not the cost of your full request.')
+            st.info('A checked split is available. There is no complete single-supplier benchmark to calculate savings against.')
         received=len(w['responses'])
-        st.caption(f'{received} of {len(w["suppliers"])} supplier quotes saved. Prices cover items only, excluding delivery, taxes, and duties. Reference currency conversions are estimates; confirm the purchase rate before ordering.')
-        if received<len(w['suppliers']) or exceptions:
-            if st.button('Add or fix supplier quotes',type='primary'):
+        st.caption(f'{received} of {len(w["suppliers"])} quotes saved. Totals exclude delivery charges, taxes, duties, and payment-term financing costs. If some suppliers have not replied, these options are provisional.')
+        if currencies:
+            st.caption('Currency conversions use dated planning rates: [Frankfurter](https://frankfurter.dev/) / [ExchangeRate-API](https://www.exchangerate-api.com).')
+        strategy=st.segmented_control('Show an allocation', ['Lowest-cost split','Up to two suppliers','One supplier'],default='Lowest-cost split',required=True,key='buying_strategy')
+        chosen={'Lowest-cost split':facts['best'],'Up to two suppliers':facts['two'],'One supplier':facts['single']}[strategy]
+        if chosen and chosen['complete']:
+            allocation_spend={supplier:sum(a['spend_inr'] for a in chosen['allocation'] if a['supplier']==supplier) for supplier in sorted({a['supplier'] for a in chosen['allocation']})}
+            chart_frame=pd.DataFrame({'Supplier':list(allocation_spend),'Item cost (INR)':list(allocation_spend.values())}).set_index('Supplier')
+            st.bar_chart(chart_frame,height=180,color='#278260')
+            st.caption('This chart shows item cost assigned to each supplier in the selected plan. It does not confirm supplier capacity.')
+            st.download_button('Download selected buying plan',csv_bytes(chosen['allocation']),'buying_plan.csv','text/csv')
+        if facts['blockers'] or any(supplier['state']=='CHECK' for supplier in facts['suppliers']):
+            if st.button('Fix quotes needing a check',type='primary'):
                 st.session_state.requested_step=steps[1]
                 st.rerun()
-        st.subheader('Prices for each item')
-        matrix=[]
-        for item in rfq.items:
-            line={'Item':item.description,'Details':item.specification,'Quantity':item.quantity,'Unit':item.uom}
-            for supplier in w['suppliers']:
-                row=next((r for r in rows if r['line_id']==item.id and r['supplier']==supplier),None)
-                line[supplier]=f'₹{row["price_inr"]:,.2f}' if row and row['eligible'] else 'Check needed' if row and row['price'] is not None else 'Not priced' if row else 'No quote yet'
-            winner=next(a for a in split['allocation'] if a['line_id']==item.id)
-            line['Lowest checked price']=winner['supplier'] if winner['supplier']!='UNASSIGNED' else 'Not ready'
-            matrix.append(line)
-        st.dataframe(pd.DataFrame(matrix),hide_index=True,height=min(520,110+35*len(matrix)))
-        st.caption('Shown prices are per requested unit, in INR. “Check needed” means the price or required supplier checks are not ready. “Not priced” means no usable price was found for this item.')
+        st.subheader('Lowest prices by item')
+        matrix,cell_styles=compact_price_matrix(rfq,w,rows,split['allocation'])
+        show_all=st.toggle('Show all items',value=False) if len(matrix)>8 else True
+        visible=matrix if show_all else matrix.head(8)
+        styles=cell_styles.loc[visible.index]
+        render_price_grid(st,visible,styles)
+        st.caption('Green ★ = lowest usable price per requested unit, in INR. All equal lowest prices are marked. Rejected suppliers cannot win; an equal-price allocation uses alphabetical supplier order.')
+        if not show_all: st.caption(f'Showing 8 of {len(matrix)} items. Turn on Show all items to see the rest.')
+        @st.dialog('Supporting documents',width='large')
+        def show_decision_source():
+            st.write('Choose an item and supplier to check the quoted value in the original file.')
+            key=st.selectbox('Item and supplier',[r['evidence_id'] for r in rows],format_func=lambda value:next(r['description']+' · '+r['supplier'] for r in rows if r['evidence_id']==value),key='source_decision_row')
+            row=next(r for r in rows if r['evidence_id']==key)
+            if row['price'] is not None: st.write(f'Quoted price: {row["currency"]} {row["price"]} per {row["price_basis"]} {row["quoted_uom"]}')
+            if row['excerpt']: st.write('Document text: '+row['excerpt'])
+            if row['reason']: st.caption(row['reason'])
+            render_sources(st,w['responses'][row['supplier']]['files'],key='decision_source',expanded=True)
+        if rows and st.button('Open supporting documents'):
+            show_decision_source()
         snapshot=fingerprint({'rfq':w['rfq'],'responses':w['responses'],'fx':w['fx'],'fx_date':w['fx_date'],'fx_basis':w['fx_basis']})
-        st.subheader('Explore the comparison')
+        st.subheader('Test a sourcing strategy')
         st.caption('Click a question for an instant answer from the checked data.')
-        prompts=['What is the lowest-cost buying plan?','Can one supplier cover every item?','Which items still need checking?','Which suppliers pass my requirements?','Did every supplier price every item?','What are the payment and delivery terms?']
+        prompts=['How should I split the order?','What if I use at most two suppliers?','What do I save by splitting instead of using one supplier?','Which suppliers are rejected, and why?','What is stopping a complete buying plan?','Which payment and delivery terms should I check?']
         question_columns=st.columns(2)
         for index,prompt in enumerate(prompts):
             with question_columns[index%2]:
@@ -1303,8 +1454,10 @@ def main():
                     reference=w.get('fx_reference',{}).get(currency)
                     if currency in w['fx']:
                         st.write(f'1 {currency} = ₹{w["fx"][currency]:.4f}')
-                        st.caption('Reference date: ' + reference['date'] if reference else 'Manually entered planning rate')
-                st.caption('Rates come from a dated exchange-rate service, not an AI estimate.')
+                        st.caption('Reference date: ' + reference['date']+' · '+reference.get('provider','Frankfurter') if reference else 'Manually entered planning rate')
+                missing=[currency for currency in currencies if currency not in w['fx']]
+                if missing: st.caption('Reference conversion is temporarily unavailable for '+', '.join(missing)+'. These prices are excluded rather than estimated without a source.')
+                st.caption('Reference rates are planning estimates. Sources: Frankfurter and [ExchangeRate-API](https://www.exchangerate-api.com).')
                 with st.form('reference_rate_override'):
                     overrides={currency:st.number_input(f'INR for 1 {currency}',min_value=0.0,value=float(w['fx'].get(currency,0)),format='%.4f') for currency in currencies}
                     if st.form_submit_button('Use these rates'):
@@ -1324,15 +1477,6 @@ def main():
             st.download_button('Price comparison (CSV)',csv_bytes(rows),'comparison_audit.csv','text/csv')
             st.download_button('Lowest-cost buying plan (CSV)',csv_bytes(split['allocation']),'award_allocation.csv','text/csv')
             st.download_button('Questions and answers (JSON)',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
-        with st.expander('Check a price against its document'):
-            if rows:
-                key=st.selectbox('Choose an item and supplier',[r['evidence_id'] for r in rows],format_func=lambda value:next(r['description']+' · '+r['supplier'] for r in rows if r['evidence_id']==value))
-                row=next(r for r in rows if r['evidence_id']==key)
-                if row['reason']: st.write(row['reason'])
-                if row['uncertainty']: st.write(row['uncertainty'])
-                if row['steps']: st.caption(row['steps'])
-                if row['excerpt']: st.write('Text from document: ' + row['excerpt'])
-                render_sources(st,w['responses'][row['supplier']]['files'],key='committed_source')
 
 
 
