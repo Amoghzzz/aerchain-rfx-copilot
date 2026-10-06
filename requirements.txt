@@ -1,5 +1,9 @@
-streamlit>=1.35.0
-google-genai>=0.1.0
-pydantic>=2.0.0
-pandas>=2.0.0
-plotly>=5.0.0
+streamlit==1.65.0
+pandas==2.2.3
+pydantic==2.13.5
+google-genai==1.75.0
+google-auth==2.60.0
+openpyxl==3.1.5
+python-docx==1.2.0
+PyMuPDF==1.26.6
+Pillow==12.3.0
