@@ -563,11 +563,68 @@ Return evidence_ids chosen only from the evidence map. No generic recommendation
             'snapshot':fingerprint({'rfq':w['rfq'],'responses':w['responses'],'fx':w['fx'],'fx_date':w['fx_date'],'fx_basis':w['fx_basis']})}
 
 
+
+def ui_columns(st):
+    labels = {
+        'id':'Item / question ID', 'description':'Item', 'specification':'Size and other details',
+        'quantity':'Quantity', 'uom':'Unit', 'location':'Delivery location', 'origin':'Who added it',
+        'label':'Question', 'mandatory':'Required', 'rule':'Pass rule', 'threshold':'Limit',
+        'unit':'Unit', 'name':'Term', 'value':'Answer / details', 'line_id':'Item ID',
+        'price':'Quoted price', 'currency':'Currency', 'quoted_uom':'Quoted unit',
+        'price_basis':'Price is per how many units?', 'approved':'Approved',
+        'review_note':'Your check note', 'uncertainty':'Details to check',
+        'file':'Document', 'locator':'Page / row', 'excerpt':'Text from document',
+        'target_units_per_quoted_unit':'Requested units per quoted unit',
+        'conversion_evidence':'Why this unit conversion is correct',
+        'discount_pct':'Discount (%)', 'discount_evidence':'Discount details in document',
+        'discount_conditional':'Discount has conditions', 'vendor_description':'Supplier’s item description',
+        'confidence':'AI confidence (0–1)', 'question_id':'Question ID', 'numeric_value':'Number',
+        'certificate_state':'Certificate status', 'expiry':'Expiry date',
+        'currency':'Currency', 'inr_per_currency':'INR for one unit of currency',
+    }
+    columns = {key:st.column_config.Column(label) for key,label in labels.items()}
+    columns['rule'] = st.column_config.SelectboxColumn('Pass rule', options=['information','valid_certificate','yes','max','min'], help='information: collect details; valid_certificate: valid certificate; yes: answer must be yes; max/min: maximum/minimum allowed value.')
+    return columns
+
+
+def request_text(rfq):
+    lines = [rfq.title, '', rfq.scope, '', 'ITEMS TO QUOTE']
+    for item in rfq.items:
+        lines.extend([f'{item.id}: {item.description}', f'Quantity: {item.quantity} {item.uom}', f'Details: {item.specification or "Not specified"}', f'Delivery location: {item.location or "Not specified"}', ''])
+    lines.append('QUESTIONS FOR SUPPLIERS')
+    for question in rfq.questions:
+        lines.append(f'{question.id}: {question.label}' + (' (required)' if question.mandatory else ''))
+        if question.rule == 'valid_certificate': lines.append('Provide a valid certificate and its expiry date.')
+        elif question.rule == 'yes': lines.append('Required answer: yes.')
+        elif question.rule in {'min','max'}: lines.append(f'{"Minimum" if question.rule == "min" else "Maximum"}: {question.threshold} {question.unit}')
+    lines.extend(['', 'TERMS'])
+    lines.extend(f'{term.name}: {term.value}' for term in rfq.terms)
+    if rfq.open_questions:
+        lines.extend(['', 'DETAILS TO CLARIFY'] + rfq.open_questions)
+    return '\n'.join(lines)
+
+
 def main():
     import streamlit as st
     import pandas as pd
     st.set_page_config(page_title='Aerchain | Sourcing workspace',page_icon='📦',layout='wide')
-    st.markdown('''<style>.stApp{background:#f7f9fc;color:#142338}.block-container{max-width:1450px;padding-top:2rem}h1{font-size:1.7rem!important}h2{font-size:1.25rem!important}[data-testid="stMetric"]{background:white;border:1px solid #dbe3ed;border-radius:10px;padding:14px}div.stButton>button[kind="primary"]{background:#215bea;color:white} div[data-testid="stAlert"]{border-radius:8px}</style>''',unsafe_allow_html=True)
+    st.markdown('''<style>
+    .stApp{background:#f6f8fc;color:#18243b}
+    .block-container{max-width:1280px;padding-top:2.2rem;padding-bottom:3rem}
+    h1{font-size:2rem!important;letter-spacing:-.035em}
+    h2{font-size:1.3rem!important;letter-spacing:-.015em}
+    [data-testid="stMetric"]{background:white;border:1px solid #e1e7f0;border-radius:14px;padding:18px}
+    [data-testid="stMetricLabel"]{white-space:normal}
+    [data-testid="stSidebar"]{background:#edf2fa}
+    [data-testid="stForm"]{background:white;border:1px solid #e1e7f0;border-radius:14px;padding:20px}
+    .stButton>button,.stDownloadButton>button{border-radius:9px;min-height:42px}
+    .stButton>button[kind="primary"]{background:#215bea;color:white}
+    [data-testid="stAlert"]{border-radius:12px}
+    [data-baseweb="tab-list"]{gap:8px;margin-bottom:18px;flex-wrap:wrap}
+    [data-baseweb="tab"]{padding:12px 18px;border-radius:9px;background:white}
+    [data-baseweb="tab"][aria-selected="true"]{background:#e8efff;color:#215bea}
+    @media(max-width:640px){.block-container{padding-left:1rem;padding-right:1rem}h1{font-size:1.65rem!important}}
+    </style>''',unsafe_allow_html=True)
     if 'work' not in st.session_state:
         st.session_state.work=empty_workspace()
     if 'pending' not in st.session_state:
@@ -593,64 +650,70 @@ def main():
         raise ValueError('Configure GCP_SERVICE_ACCOUNT or GEMINI_API_KEY in Streamlit Secrets. See README.')
     def call(action):
         try:
-            with st.spinner('Reading evidence and analyzing…'):
+            with st.spinner('Reading your documents…'):
                 with get_client() as client:
                     return action(client)
         except Exception as e:
-            code = getattr(e, 'code', 'unknown')
-            message = str(
-                getattr(e, 'message', None) or type(e).__name__
-            )
-
-            # Remove the configured API key if it occurs in the message.
+            st.error('We could not get an AI response. Your work has not changed. Try again after checking the error details.')
+            message = str(getattr(e, 'message', None) or type(e).__name__)
             api_key = secret('GEMINI_API_KEY')
             if api_key:
                 message = message.replace(str(api_key), '[REDACTED]')
-
-            # Remove strings that look like Google API keys.
-            message = re.sub(
-                r'AIza[0-9A-Za-z_-]+',
-                '[REDACTED]',
-                message,
-            )
-
-            st.error(
-                f'AI request failed. Code: {code}. '
-                'No result was committed.'
-            )
-            st.code(message[:3000], language=None)
+            message = re.sub(r'AIza[0-9A-Za-z_-]+', '[REDACTED]', message)
+            with st.expander('Error details for the app owner'):
+                st.write(f"Error code: {getattr(e, 'code', 'unknown')}")
+                st.code(message[:3000], language=None)
             return None
     def invalidate():
         st.session_state.pop('answer',None)
-    st.caption('AERCHAIN  /  PROCUREMENT INTELLIGENCE')
-    st.title(w['rfq']['title'] if w['rfq'] else 'Turn supplier chaos into a defensible decision')
-    st.caption('Source → review → compare → explain. Every price keeps its evidence.')
-    with st.expander('Save or restore workspace'):
-        st.caption('Session changes survive reruns. Download a checkpoint before closing the browser; restarting the app can clear session state. Checkpoints contain original supplier files; credentials are never exported.')
-        st.download_button('Download workspace checkpoint',workspace_bytes(w),'aerchain_workspace.json','application/json')
-        restore=st.file_uploader('Restore checkpoint',type=['json'],key='restore')
-        if st.button('Restore uploaded checkpoint',disabled=not restore):
+    st.caption('AERCHAIN · SUPPLIER QUOTES')
+    st.title(w['rfq']['title'] if w['rfq'] else 'Find the right supplier')
+    st.caption('Create a request, check supplier quotes, and compare prices in one place.')
+    with st.sidebar.expander('Save your work or start again', expanded=True):
+        st.caption('Download a backup before leaving. Upload it to continue later. It includes your supplier documents, so keep it private.')
+        st.download_button('Download backup',workspace_bytes(w),'aerchain_workspace.json','application/json')
+        restore=st.file_uploader('Upload a saved backup',type=['json'],key='restore')
+        if st.button('Open backup',disabled=not restore):
             try:
                 st.session_state.work=load_workspace(restore.getvalue())
                 st.session_state.pending=None
                 invalidate()
                 st.rerun()
             except Exception as e:
-                st.error(f'Checkpoint could not be loaded: {e}')
-        start_over=st.checkbox('I saved a checkpoint and want to clear this session.',key='confirm_reset')
-        if st.button('Start a new RFQ',disabled=not start_over):
+                st.error(f'Could not open this backup: {e}')
+        start_over=st.checkbox('I saved a backup and want to clear this request.',key='confirm_reset')
+        if st.button('Start a new request',disabled=not start_over):
             st.session_state.clear()
             st.rerun()
+    with st.sidebar:
+        st.divider()
+        st.subheader('Your progress')
+        st.write('✓ Request ready' if w['published'] else '○ Create and check your request')
+        st.write(f"{len(w['suppliers'])} suppliers added")
+        st.write(f"{len(w['responses'])} quotes checked and saved")
+        if st.session_state.pending:
+            st.warning('One quote is waiting for your review.')
+        st.caption('RFQ means request for quotation: a list of what you want suppliers to price.')
+    if not w['rfq']:
+        st.info('Start in Step 1: tell us what you need to buy. You can check and edit the draft before sending it.')
+    elif not w['published']:
+        st.info('Next: check your draft in Step 1, then finish the request.')
+    elif not w['suppliers']:
+        st.info('Next: add supplier names at the bottom of Step 1 and download your invitations.')
+    elif not w['responses']:
+        st.info('Next: send your request to suppliers. When they reply, add their quotes in Step 2.')
+    elif not st.session_state.pending:
+        st.info('Open Step 3 to compare checked quotes. You can add more quotes in Step 2.')
     # Tabs render together, but all mutations are gated explicitly.
-    create_tab,response_tab,decision_tab=st.tabs(['1  Create RFQ','2  Supplier responses','3  Compare & decide'])
+    create_tab,response_tab,decision_tab=st.tabs(['1 · Create request','2 · Add supplier quotes','3 · Compare quotes'])
     with create_tab:
-        st.subheader('Describe the sourcing need')
-        st.caption('Provide specs and quantities where you have them. AI suggestions require your confirmation before publishing.')
-        brief=st.text_area('Sourcing brief',height=170,key='brief',placeholder='30 corrugated packaging SKUs for Bhiwandi and Hosur. ISO 9001 mandatory…')
-        req_files=st.file_uploader('Optional item list / requirements',type=['pdf','xlsx','docx','png','jpg','txt','csv'],accept_multiple_files=True,key='reqfiles')
-        if st.button('Generate RFQ draft',type='primary',disabled=w['published'] or bool(w['responses']) or st.session_state.pending is not None):
+        st.subheader('What do you want to buy?')
+        st.caption('Describe the items, quantities, and delivery location. The AI will make a draft for you to check.')
+        brief=st.text_area('Describe your requirement',height=170,key='brief',placeholder='I need 100 cardboard boxes, 30 × 20 × 15 cm, delivered to Bhiwandi. Suppliers must have ISO 9001 certification.')
+        req_files=st.file_uploader('Add an item list or document (optional)',type=['pdf','xlsx','docx','png','jpg','txt','csv'],accept_multiple_files=True,key='reqfiles')
+        if st.button('Create my draft',type='primary',disabled=w['published'] or bool(w['responses']) or st.session_state.pending is not None):
             if not brief.strip() and not req_files:
-                st.warning('Add a sourcing brief or requirements file.')
+                st.warning('Describe what you need or upload a document first.')
             else:
                 def generate(client):
                     parts=prepare_sources([{'name':f.name,'data':f.getvalue()} for f in req_files])[0] if req_files else []
@@ -667,27 +730,29 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                     st.rerun()
         if w['rfq']:
             rfq=RFQ.model_validate(w['rfq'])
-            st.info('Published RFQ is frozen. Start a new workspace to change scope after supplier responses.') if w['published'] else None
+            if w['published']:
+                st.success('Your request is ready. Add supplier names below, then download the email and request to send to them.')
+                st.caption('Editing is now locked so every quote uses the same items and requirements. To change them, save a backup and start a new request.')
             with st.form('edit_rfq'):
-                title=st.text_input('RFQ title',rfq.title,disabled=w['published'])
-                scope=st.text_area('Scope',rfq.scope,disabled=w['published'])
-                st.markdown('**Line items**')
-                edited=st.data_editor(pd.DataFrame([dump(i) for i in rfq.items]),hide_index=True,num_rows='dynamic',disabled=w['published'],key='items_editor')
-                st.markdown('**Questionnaire and qualification rules**')
-                st.caption('Mandatory rules must be explicit. min/max thresholds include a unit; certificate rules require documentary evidence and expiry review.')
-                qs=st.data_editor(pd.DataFrame([dump(q) for q in rfq.questions],columns=list(Question.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='questions_editor')
-                st.markdown('**Terms**')
-                terms=st.data_editor(pd.DataFrame([dump(t) for t in rfq.terms],columns=list(Term.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='terms_editor')
-                confirm=st.checkbox('I have reviewed all suggested specifications, quantities, questionnaire rules and terms.',disabled=w['published'])
-                save=st.form_submit_button('Save reviewed draft',disabled=w['published'])
-                publish=st.form_submit_button('Publish & prepare supplier invitations',type='primary',disabled=w['published'])
+                title=st.text_input('Request title',rfq.title,disabled=w['published'])
+                scope=st.text_area('What the supplier should provide',rfq.scope,disabled=w['published'])
+                st.markdown('**Items to buy**')
+                edited=st.data_editor(pd.DataFrame([dump(i) for i in rfq.items]),hide_index=True,num_rows='dynamic',disabled=w['published'],key='items_editor',column_config=ui_columns(st))
+                st.markdown('**Questions for suppliers**')
+                st.caption('For required checks, choose what counts as a pass. For example: a valid certificate or delivery within 10 days.')
+                qs=st.data_editor(pd.DataFrame([dump(q) for q in rfq.questions],columns=list(Question.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='questions_editor',column_config=ui_columns(st))
+                st.markdown('**Payment, delivery, and other terms**')
+                terms=st.data_editor(pd.DataFrame([dump(t) for t in rfq.terms],columns=list(Term.model_fields)),hide_index=True,num_rows='dynamic',disabled=w['published'],key='terms_editor',column_config=ui_columns(st))
+                confirm=st.checkbox('I have checked the items, quantities, supplier questions, and terms.',disabled=w['published'])
+                save=st.form_submit_button('Save draft',disabled=w['published'])
+                publish=st.form_submit_button('Finish request & prepare invitations',type='primary',disabled=w['published'])
             if save or publish:
                 try:
                     def records(df):
                         return json.loads(df.to_json(orient='records'))
                     candidate=RFQ(title=title,scope=scope,items=records(edited),questions=records(qs),terms=records(terms),open_questions=rfq.open_questions)
                     errors=validate_rfq(candidate)
-                    if publish and not confirm: errors.append('Confirm that you reviewed AI suggestions.')
+                    if publish and not confirm: errors.append('Please tick the box to confirm you checked the draft.')
                     if errors:
                         st.error(' '.join(errors))
                     else:
@@ -699,36 +764,37 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                         invalidate()
                         st.rerun()
                 except Exception as e:
-                    st.error(f'Draft validation failed: {e}')
+                    st.error(f'Please check the draft: {e}')
             if rfq.open_questions:
-                with st.expander('Questions raised by AI — resolve while reviewing the draft'):
+                with st.expander('Details you still need to check'):
                     for q in rfq.open_questions: st.write('• '+q)
-            st.download_button('Download RFQ JSON',rfq.model_dump_json(indent=2),'RFQ.json','application/json')
-            st.download_button('Download item list CSV',csv_bytes([dump(i) for i in rfq.items]),'RFQ_items.csv','text/csv')
+            st.download_button('Download request to send (TXT)',request_text(rfq),'supplier_request.txt','text/plain')
+            st.download_button('Download request data (JSON)',rfq.model_dump_json(indent=2),'RFQ.json','application/json')
+            st.download_button('Download item list (CSV)',csv_bytes([dump(i) for i in rfq.items]),'RFQ_items.csv','text/csv')
         if w['published']:
-            suppliers=st.text_area('Invited suppliers — one name per line',value='\n'.join(w['suppliers']),key='supplier_names')
+            suppliers=st.text_area('Supplier names — one on each line',value='\n'.join(w['suppliers']),key='supplier_names')
             if st.button('Save suppliers',disabled=bool(w['responses']) or st.session_state.pending is not None):
                 names=[s.strip() for s in suppliers.splitlines() if s.strip()]
                 if not 1<=len(names)<=8 or len(set(names))!=len(names):
-                    st.error('Provide 1–8 unique supplier names. Use 5 for the assignment.')
+                    st.error('Enter 1 to 8 supplier names. Each name must be different.')
                 else:
                     w['suppliers']=names
                     record(w,'Suppliers invited',names)
                     st.rerun()
-            invite='Subject: Request for quotation — '+w['rfq']['title']+'\n\nPlease quote against the attached RFQ and include the questionnaire and supporting documents. You may reply in your own format.\n\n'+RFQ.model_validate(w['rfq']).model_dump_json(indent=2)
-            st.download_button('Download invitation email draft',invite,'supplier_invitation.txt','text/plain')
-            st.caption('Invitation delivery is stubbed: download the draft and RFQ. No email has been sent.')
+            invite='Subject: Request for quotation — '+w['rfq']['title']+'\n\nPlease send your prices for the items below, answer the supplier questions, and attach any required certificates. You can reply by email or send your usual quote document.\n\n'+request_text(RFQ.model_validate(w['rfq']))
+            st.download_button('Download email to send to suppliers',invite,'supplier_invitation.txt','text/plain')
+            st.caption('Send the downloaded email and request to your suppliers yourself. This app does not send emails.')
     with response_tab:
         if not w['published'] or not w['suppliers']:
-            st.info('Publish the RFQ and save invited supplier names first.')
+            st.info('Go to Create request, finish your draft, and save your supplier names first.')
         else:
             rfq=RFQ.model_validate(w['rfq'])
-            st.subheader('Read any supplier response')
-            st.caption('Upload the quote and its certificates together. Revisions replace the entire supplier bundle; include all still-applicable supporting documents.')
+            st.subheader('Add a supplier quote')
+            st.caption('Choose a supplier and add their quote and certificates. To update a quote, upload all documents again; they replace the previous set.')
             supplier=st.selectbox('Supplier',w['suppliers'],key='supplier')
-            uploads=st.file_uploader('Quote and supporting documents',type=['pdf','xlsx','docx','png','jpg','jpeg','txt','csv','eml'],accept_multiple_files=True,key='supplier_uploads')
-            email=st.text_area('Or paste supplier email (can accompany attachments)',key='supplier_email')
-            if st.button('Extract supplier response',type='primary',disabled=st.session_state.pending is not None):
+            uploads=st.file_uploader('Upload the quote and certificates',type=['pdf','xlsx','docx','png','jpg','jpeg','txt','csv','eml'],accept_multiple_files=True,key='supplier_uploads')
+            email=st.text_area('Paste their email here (optional)',key='supplier_email')
+            if st.button('Read this quote',type='primary',disabled=st.session_state.pending is not None):
                 files=[{'name':f.name,'data':f.getvalue()} for f in uploads]
                 if email.strip(): files.append({'name':'pasted_email.txt','data':email.encode()})
                 hashes=sorted(hashlib.sha256(f['data']).hexdigest() for f in files)
@@ -736,7 +802,7 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                 if not files:
                     st.warning('Upload documents or paste an email.')
                 elif w['responses'].get(supplier,{}).get('bundle_hash')==bundle_hash:
-                    st.warning('This exact supplier bundle is already committed. No duplicate was created.')
+                    st.warning('These documents have already been saved for this supplier.')
                 else:
                     result=call(lambda client:extract(client,model,rfq,supplier,files))
                     if result:
@@ -747,23 +813,23 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
             p=st.session_state.pending
             if p:
                 st.divider()
-                st.subheader('Review extraction — '+p['supplier'])
+                st.subheader('Check the quote — '+p['supplier'])
                 ext=Extraction.model_validate(p['extraction'])
-                st.write('Detected supplier:',ext.detected_supplier or 'Unclear')
+                st.write('Supplier named in the documents:',ext.detected_supplier or 'Unclear')
                 for warning in ext.warnings: st.warning(warning)
                 if ext.detected_supplier and squash(ext.detected_supplier)!=squash(p['supplier']):
-                    st.warning('Detected supplier differs from selected name. Verify identity before committing.')
+                    st.warning('The document names a different supplier. Check that you selected the right one before saving.')
                 render_sources(st,p['files'],key='pending_source')
-                st.caption('Edit fields against the original source. Approve each reliable bid/mandatory answer and add a verification note. Unchecked rows remain excluded; confidence alone never makes a bid eligible.')
+                st.caption('Check these values against the original documents. Tick Approved for prices and answers you checked, and add a short note. Unchecked prices will not be used to choose a supplier.')
                 with st.form('review_extraction'):
-                    bid_df=st.data_editor(pd.DataFrame([dump(b) for b in ext.bids],columns=list(Bid.model_fields)),hide_index=True,num_rows='dynamic',key='bid_review',column_order=['line_id','price','currency','quoted_uom','price_basis','approved','review_note','uncertainty','file','locator','excerpt','target_units_per_quoted_unit','conversion_evidence','discount_pct','discount_evidence','discount_conditional','vendor_description','confidence'])
-                    ans_df=st.data_editor(pd.DataFrame([dump(a) for a in ext.answers],columns=list(Answer.model_fields)),hide_index=True,num_rows='dynamic',key='answer_review')
-                    bulk_note=st.text_input('Verification note for batch-reviewed fields',placeholder='Compared clear rates and questionnaire answers with the original files')
-                    bulk_bids=st.checkbox('I checked every clear mapped bid against the source; approve these clear bids with my note.')
-                    bulk_answers=st.checkbox('I checked every provided questionnaire answer against its source; approve these answers with my note.')
-                    st.caption('Batch price approval skips ambiguous, unmatched, duplicate and conditional-discount bids. Resolve those individually. Checkbox selection is your verification, not an AI approval.')
-                    identity=st.checkbox('I verified supplier identity; this bundle replaces the previous response for this supplier.')
-                    commit=st.form_submit_button('Commit reviewed response',type='primary')
+                    bid_df=st.data_editor(pd.DataFrame([dump(b) for b in ext.bids],columns=list(Bid.model_fields)),hide_index=True,num_rows='dynamic',key='bid_review',column_config=ui_columns(st),column_order=['line_id','price','currency','quoted_uom','price_basis','approved','review_note','uncertainty','file','locator','excerpt','target_units_per_quoted_unit','conversion_evidence','discount_pct','discount_evidence','discount_conditional','vendor_description','confidence'])
+                    ans_df=st.data_editor(pd.DataFrame([dump(a) for a in ext.answers],columns=list(Answer.model_fields)),hide_index=True,num_rows='dynamic',key='answer_review',column_config=ui_columns(st))
+                    bulk_note=st.text_input('How did you check these details?',placeholder='I checked the prices and answers against the supplier’s original quote.')
+                    bulk_bids=st.checkbox('I checked all clearly matched prices. Approve them using my note.')
+                    bulk_answers=st.checkbox('I checked all supplier answers. Approve them using my note.')
+                    st.caption('Prices with missing details, duplicates, or conditional discounts need individual checks. The AI cannot approve prices for you.')
+                    identity=st.checkbox('These documents belong to this supplier. I understand they replace any earlier quote.')
+                    commit=st.form_submit_button('Save checked quote',type='primary')
                 st.dataframe(pd.DataFrame([dump(c) for c in ext.commercials]),hide_index=True)
                 if commit:
                     try:
@@ -800,8 +866,8 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                         invalidate()
                         st.rerun()
                     except Exception as e:
-                        st.error(f'Review validation failed: {e}')
-                if st.button('Discard staged extraction'):
+                        st.error(f'Could not save the quote: {e}')
+                if st.button('Cancel this quote review'):
                     st.session_state.pending=None
                     st.rerun()
             rows,qual,commercials=build_dataset(rfq,w['responses'],w['fx'])
@@ -810,28 +876,28 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                 state=next((q['state'] for q in qual if q['supplier']==s and 'state'in q),'NO RESPONSE')
                 sr=[r for r in rows if r['supplier']==s]
                 status.append({'Supplier':s,'Received':s in w['responses'],'Quoted lines':sum(r['price'] is not None for r in sr),'Eligible lines':sum(r['eligible'] for r in sr),'Qualification':state})
-            st.subheader('Response status')
+            st.subheader('Quotes received')
             st.dataframe(pd.DataFrame(status),hide_index=True)
             if w['responses']:
-                revise=st.selectbox('Reopen a committed response for corrections',list(w['responses']),key='revise_supplier')
-                if st.button('Reopen review',disabled=st.session_state.pending is not None):
+                revise=st.selectbox('Choose a saved quote to edit',list(w['responses']),key='revise_supplier')
+                if st.button('Edit saved quote',disabled=st.session_state.pending is not None):
                     st.session_state.pending=json.loads(json.dumps(w['responses'][revise]))
                     st.rerun()
     with decision_tab:
         if not w['responses']:
-            st.info('Commit at least one extracted supplier response to compare bids.')
+            st.info('Add and check at least one supplier quote in Step 2 to see the comparison.')
             return
         if st.session_state.pending:
-            st.warning('A response is awaiting review. Commit or discard it before making a decision.')
+            st.warning('You have a quote waiting to be checked. Save it or cancel its review in Step 2 before comparing.')
             return
         rfq=RFQ.model_validate(w['rfq'])
-        with st.expander('Comparison policy: buyer-approved FX and pricing scope'):
-            st.caption('No live FX lookup. Enter your approved planning rate, valuation date and source. Unknown currencies are excluded. This prototype compares goods prices, excluding freight, tax and duties; commercial exceptions remain visible.')
+        with st.expander('Currency conversion settings'):
+            st.caption('If a supplier quotes in another currency, enter the exchange rate and where you got it. Rates do not update automatically. Prices exclude delivery charges, taxes, and duties.')
             with st.form('fx_policy'):
-                fx_df=st.data_editor(pd.DataFrame([{'currency':k,'inr_per_currency':v} for k,v in w['fx'].items()]),hide_index=True,num_rows='dynamic')
-                fx_date=st.date_input('Valuation date',dt.date.fromisoformat(w['fx_date']))
-                fx_basis=st.text_input('FX source / planning policy',w['fx_basis'])
-                if st.form_submit_button('Apply FX policy'):
+                fx_df=st.data_editor(pd.DataFrame([{'currency':k,'inr_per_currency':v} for k,v in w['fx'].items()]),hide_index=True,num_rows='dynamic',column_config=ui_columns(st))
+                fx_date=st.date_input('Exchange rate date',dt.date.fromisoformat(w['fx_date']))
+                fx_basis=st.text_input('Where did this exchange rate come from?',w['fx_basis'])
+                if st.form_submit_button('Save exchange rates'):
                     try:
                         fx={str(r['currency']).strip().upper():float(r['inr_per_currency']) for _,r in fx_df.iterrows()}
                         if fx.get('INR')!=1 or any(not re.fullmatch('[A-Z]{3}',k) or number(v) is None or v<=0 for k,v in fx.items()) or not fx_basis.strip():
@@ -846,20 +912,20 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
         split=scenarios[0]
         exceptions=[r for r in rows if r['status'] not in STATUS_OK]
         complete_responses=len(w['responses'])==len(w['suppliers'])
-        st.subheader('Decision summary')
+        st.subheader('Your quote comparison')
         cols=st.columns(4)
-        cols[0].metric('Comparable goods spend' if split['complete'] else 'Partial goods spend',f'₹{split["spend_inr"]:,.2f}')
-        cols[1].metric('Award coverage',f'{split["covered"]}/{split["total_lines"]}')
-        cols[2].metric('Qualified suppliers',sum(q.get('state')=='QUALIFIED' for q in qual))
-        cols[3].metric('Price exceptions',len(exceptions))
+        cols[0].metric('Total item cost' if split['complete'] else 'Cost of checked items only',f'₹{split["spend_inr"]:,.2f}')
+        cols[1].metric('Items with a usable quote',f'{split["covered"]}/{split["total_lines"]}')
+        cols[2].metric('Suppliers passing required checks',sum(q.get('state')=='QUALIFIED' for q in qual))
+        cols[3].metric('Prices to check',len(exceptions))
         if not split['complete']:
-            st.error('Full award is blocked: one or more lines lack a verified, qualified comparable bid. Partial spend is not the full RFQ cost.')
+            st.error('Some items still need a usable, checked quote from a supplier that passes your requirements. The amount shown covers only the items ready to compare.')
         elif not complete_responses:
-            st.warning('Provisional scenario: some invited suppliers have not responded.')
+            st.warning('Some suppliers have not replied yet. The comparison may change when their quotes arrive.')
         else:
-            st.success('Full price allocation is available. Review commercial exceptions before negotiating or placing an order.')
-        st.caption(f'Cost basis: quoted goods prices excluding tax/freight/duties. FX date {w["fx_date"]}; {w["fx_basis"]}. Buyer-reviewed evidence is not independent certificate authentication.')
-        ex_tab,matrix_tab,q_tab,scenario_tab,evidence_tab=st.tabs(['Exceptions','Bid comparison','Quality & commercials','Award scenarios','Evidence'])
+            st.success('Every item has a usable quote. Check payment and delivery terms before choosing suppliers.')
+        st.caption(f'Prices cover items only, excluding delivery charges, taxes, and duties. Exchange rate date: {w["fx_date"]}; {w["fx_basis"]}. You still need to confirm certificates are genuine.')
+        ex_tab,matrix_tab,q_tab,scenario_tab,evidence_tab=st.tabs(['Needs attention','Prices by supplier','Checks & terms','Buying options','Source documents'])
         with ex_tab:
             st.dataframe(pd.DataFrame(exceptions)[['supplier','line_id','status','reason','uncertainty','file','locator']] if exceptions else pd.DataFrame(),hide_index=True)
             for q in qual:
@@ -868,7 +934,7 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                 ext=Extraction.model_validate(res['extraction'])
                 unmatched=[dump(b) for b in ext.bids if b.line_id is None]
                 if unmatched:
-                    st.write('Unmatched response lines — '+s)
+                    st.write('Quoted items that could not be matched — '+s)
                     st.dataframe(pd.DataFrame(unmatched),hide_index=True)
                 for warning in ext.warnings: st.warning(s+': '+warning)
         with matrix_tab:
@@ -879,35 +945,35 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
                     r=next((r for r in rows if r['line_id']==item.id and r['supplier']==s),None)
                     row[s]=(f'₹{r["price_inr"]:.4f} · {r["status"]} · {r["qualification"]}' if r and r['price_inr'] is not None else (r['status'] if r else 'NO RESPONSE'))
                 winner=next(a for a in split['allocation'] if a['line_id']==item.id)
-                row['Lowest eligible bidder']=winner['supplier']
+                row['Lowest checked price from']=winner['supplier']
                 matrix.append(row)
             st.dataframe(pd.DataFrame(matrix),hide_index=True,height=450)
-            st.caption('Inspection prices can be shown for review-required bids; only eligible bids compete for lowest bidder.')
+            st.caption('Prices waiting for review are shown for reference. Only checked prices from suppliers passing your requirements can be selected.')
         with q_tab:
             st.dataframe(pd.DataFrame(qual),hide_index=True)
             st.dataframe(pd.DataFrame(commercials),hide_index=True)
-            st.caption('Certificates are reviewed from provided documents; registry validation, supplier-capacity constraints and payment-term financing costs are outside this prototype.')
+            st.caption('Check certificates against the original documents. The app does not check official registries, supplier capacity, or financing costs.')
         with scenario_tab:
             st.dataframe(pd.DataFrame([{k:v for k,v in s.items() if k!='allocation'} for s in scenarios]),hide_index=True)
-            selected=st.selectbox('Inspect scenario',range(len(scenarios)),format_func=lambda i:scenarios[i]['strategy'])
+            selected=st.selectbox('Choose a buying option',range(len(scenarios)),format_func=lambda i:scenarios[i]['strategy'])
             alloc=scenarios[selected]['allocation']
             st.dataframe(pd.DataFrame(alloc),hide_index=True)
             if alloc:
                 chart=pd.DataFrame([a for a in alloc if a['spend_inr'] is not None])
                 if not chart.empty: st.bar_chart(chart.groupby('supplier')['spend_inr'].sum())
-                st.download_button('Download scenario allocation',csv_bytes(alloc),'award_allocation.csv','text/csv')
-            st.caption('Supplier-count scenarios enumerate all combinations and require full coverage. Ties use alphabetical supplier order. Whole-award or volume-dependent discounts remain excluded until terms are clarified.')
+                st.download_button('Download this buying plan',csv_bytes(alloc),'award_allocation.csv','text/csv')
+            st.caption('Compare buying from one supplier or several. Each complete option covers every item. Equal prices are sorted by supplier name. Discounts tied to order size need a separate check.')
         with evidence_tab:
-            key=st.selectbox('Inspect bid evidence',[r['evidence_id'] for r in rows])
+            key=st.selectbox('Choose a quote to check',[r['evidence_id'] for r in rows])
             r=next(r for r in rows if r['evidence_id']==key)
             st.json({k:r[k] for k in ['price','currency','quoted_uom','price_basis','price_inr','steps','status','reason','file','locator','excerpt','confidence','review_note']})
-            st.caption('Model confidence is an uncalibrated heuristic. Buyer verification and conversion evidence determine eligibility.')
+            st.caption('The AI confidence score is only a guide. Your document checks decide whether a price can be used.')
             render_sources(st,w['responses'][r['supplier']]['files'],key='committed_source')
         st.divider()
-        st.subheader('Ask the sourcing analyst')
-        st.caption('AI interprets the question, code calculates the result, and AI explains using the selected evidence. Tables contain deterministic figures.')
-        query=st.text_input('Your sourcing question',placeholder='What is the cheapest split using only suppliers that passed quality?')
-        if st.button('Analyze question',type='primary'):
+        st.subheader('Ask about your quotes')
+        st.caption('Ask a question about prices, supplier checks, or buying options. The app calculates the figures and the AI explains them.')
+        query=st.text_input('What would you like to know?',placeholder='What is the lowest-cost option using suppliers that passed my checks?')
+        if st.button('Get answer',type='primary'):
             if query.strip():
                 result=call(lambda client:analyst(client,model,query,rfq,w,rows,qual,commercials))
                 if result:
@@ -925,18 +991,18 @@ Draft a relevant questionnaire. Mandatory rules only when explicitly requested. 
             if answer['plan']['operation']=='scenarios':
                 chart=pd.DataFrame([t for t in answer['table'] if t['complete']])
                 if not chart.empty: st.bar_chart(chart.set_index('strategy')['spend_inr'])
-            with st.expander('Evidence cited in this answer / executed analysis plan'):
+            with st.expander('Documents and details used for this answer'):
                 st.json(answer['plan'])
                 st.dataframe(pd.DataFrame(answer['evidence']),hide_index=True)
-            st.download_button('Export answer table',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
-        st.download_button('Export comparison and provenance',csv_bytes(rows),'comparison_audit.csv','text/csv')
-        st.download_button('Export analyst conversation',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
-        st.download_button('Export event log',json.dumps(w['events'],indent=2),'audit_events.json','application/json')
+            st.download_button('Download answer table',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
+        st.download_button('Download prices and source details',csv_bytes(rows),'comparison_audit.csv','text/csv')
+        st.download_button('Download questions and answers',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
+        st.download_button('Download activity history',json.dumps(w['events'],indent=2),'audit_events.json','application/json')
 
 
 def render_sources(st, files, key):
-    with st.expander('Open original source documents'):
-        selected=st.selectbox('Source file',range(len(files)),format_func=lambda i:files[i]['name'],key=key)
+    with st.expander('View the original documents'):
+        selected=st.selectbox('Choose a document',range(len(files)),format_func=lambda i:files[i]['name'],key=key)
         f=files[selected]
         raw=base64.b64decode(f['data'])
         ext=Path(f['name']).suffix.lower()
