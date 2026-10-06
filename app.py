@@ -564,6 +564,15 @@ Return evidence_ids chosen only from the evidence map. No generic recommendation
 
 
 
+def price_detail_columns(bids):
+    columns=[]
+    if any(b.line_id is None or b.uncertainty for b in bids): columns+=['line_id','uncertainty']
+    if any(b.discount_pct or b.discount_conditional or b.discount_evidence for b in bids): columns+=['discount_pct','discount_conditional','discount_evidence']
+    if any(b.target_units_per_quoted_unit or b.conversion_evidence for b in bids): columns+=['target_units_per_quoted_unit','conversion_evidence']
+    if any(not b.file or not b.locator or not b.excerpt for b in bids): columns+=['file','locator','excerpt']
+    return columns
+
+
 def combine_review(base, basic, extra):
     """Merge disjoint editable columns without dropping hidden source evidence."""
     if len(base) != len(basic) or len(base) != len(extra):
@@ -710,7 +719,7 @@ def main():
         next_step = 'Add supplier names at the bottom of Step 1.'
         stage = 'Add your suppliers'
     elif not w['responses']:
-        next_step = 'Use Send invitations in Step 1 to try the demo, then upload supplier quotes in Step 2.' if not w.get('demo_invited_suppliers') else 'Invitations are marked as sent for this demo. Open Step 2 and upload supplier quotes.'
+        next_step = 'Prepare invitations in Step 1, then upload supplier quotes in Step 2.' if not w.get('demo_invited_suppliers') else 'Invitations are prepared. Open Step 2 and upload supplier quotes.'
         stage = 'Collect supplier quotes'
     else:
         next_step = 'Open Step 3 to compare saved quotes, or add another quote in Step 2.'
@@ -722,6 +731,8 @@ def main():
         if w['suppliers']:
             st.caption(f"{len(w['responses'])} of {len(w['suppliers'])} supplier quotes saved")
     st.info(next_step)
+    review_notice=st.session_state.pop('review_notice',None)
+    if review_notice: st.warning(review_notice)
     steps=['1 · Create request','2 · Add supplier quotes','3 · Compare quotes']
     requested_step=st.session_state.pop('requested_step',None)
     if requested_step is not None:
@@ -796,7 +807,7 @@ def main():
                     for q in rfq.open_questions: st.write('• '+q)
         if w['published']:
             st.subheader('Invite suppliers')
-            st.caption('Demo mode: invitations are simulated. No email will be sent.')
+            st.caption('Email delivery is not connected. This step prepares invitations without sending emails.')
             with st.form('choose_suppliers'):
                 suppliers=st.text_area('Supplier names — one on each line',value='\n'.join(w['suppliers']),key='supplier_names',disabled=bool(w['responses']) or st.session_state.pending is not None)
                 save_suppliers=st.form_submit_button('Save supplier list',disabled=bool(w['responses']) or st.session_state.pending is not None)
@@ -816,16 +827,16 @@ def main():
                     with st.container(border=True):
                         left,right=st.columns([3,2])
                         left.write('**' + name + '**')
-                        right.caption('Quote saved' if name in w['responses'] else 'Invitation sent · demo' if name in demo_invited else 'Ready to invite')
+                        right.caption('Quote saved' if name in w['responses'] else 'Invitation prepared' if name in demo_invited else 'Ready to invite')
                 if set(w['suppliers']) != set(demo_invited):
-                    if st.button('Send invitations — demo',type='primary'):
+                    if st.button('Send invitations',type='primary'):
                         w['demo_invited_suppliers']=list(w['suppliers'])
                         record(w,'Invitations simulated',{'suppliers':w['suppliers'],'emails_sent':False})
                         st.session_state.requested_step=steps[1]
                         st.session_state.invitation_notice=True
                         st.rerun()
                 else:
-                    st.success('Invitations are marked as sent for this demo. No emails were sent.')
+                    st.success('Invitations are prepared. Continue to add supplier quotes.')
                     if st.button('Continue to supplier quotes',type='primary'):
                         st.session_state.requested_step=steps[1]
                         st.rerun()
@@ -837,7 +848,7 @@ def main():
                 st.download_button('Invitation email (TXT)',invite,'supplier_invitation.txt','text/plain')
     elif active_step == steps[1]:
         if st.session_state.pop('invitation_notice',False):
-            st.success('Demo invitations are ready. No emails were sent. Upload a supplier quote below to continue the demo.')
+            st.success('Invitations are prepared. Upload a supplier quote below to continue.')
         saved_supplier=st.session_state.pop('quote_saved',None)
         if saved_supplier:
             st.success(saved_supplier + '’s quote is saved. Add another supplier quote below, or open Step 3 to compare.')
@@ -872,43 +883,72 @@ def main():
             if p:
                 st.subheader('Check ' + p['supplier'] + '’s quote')
                 ext=Extraction.model_validate(p['extraction'])
-                st.write('Check the numbers below against the supplier’s quote. Tick the prices you checked, then save.')
-                st.caption('Use View the original documents whenever you need to check a value. Extra details are optional unless a price needs fixing.')
+                st.write('You can edit the prices and answers below. Check them against the supplier quote, then save.')
+                st.caption('You do not need to tick every row. Use the two confirmation boxes at the bottom for clear prices and answers you have checked. Leave unclear values unchecked.')
                 if ext.detected_supplier and squash(ext.detected_supplier)!=squash(p['supplier']):
                     st.warning('The document names a different supplier: ' + ext.detected_supplier + '. Check you selected the right supplier.')
                 if ext.warnings:
                     with st.expander(f'Details to check ({len(ext.warnings)})'):
                         for warning in ext.warnings: st.warning(warning)
-                render_sources(st,p['files'],key='pending_source')
+                @st.dialog('Supplier documents',width='large')
+                def show_quote_documents():
+                    render_sources(st,p['files'],key='pending_source',expanded=True)
+                if st.button('Open supplier documents'):
+                    show_quote_documents()
                 with st.form('review_extraction'):
                     st.markdown('**1. Check the prices**')
-                    price_columns = ['line_id','vendor_description','price','currency','quoted_uom','price_basis','approved','review_note']
+                    price_columns = ['vendor_description','price','currency','quoted_uom','price_basis','approved','review_note']
                     bid_base = pd.DataFrame([dump(b) for b in ext.bids],columns=list(Bid.model_fields))
+                    item_names={item.id:item.description for item in rfq.items}
                     if ext.bids:
-                        basic_bids=st.data_editor(bid_base[price_columns],hide_index=True,key='simple_bid_review',column_config=ui_columns(st))
-                        needs_check=sum(bool(b.uncertainty) or b.line_id is None or b.discount_conditional for b in ext.bids)
-                        if needs_check:
-                            st.warning(f'{needs_check} prices need a closer look. Open More price details below before approving them.')
-                        with st.expander('More price details — discounts, units, and document references'):
-                            st.caption('These rows follow the same order as the prices above. Fix missing details here when needed.')
-                            extra_columns=[c for c in bid_base.columns if c not in price_columns]
-                            extra_bids=st.data_editor(bid_base[extra_columns],hide_index=True,key='extra_bid_review',column_config=ui_columns(st))
+                        price_display=bid_base[price_columns].copy()
+                        price_display.insert(0,'_item',[item_names.get(b.line_id,'Item not matched') for b in ext.bids])
+                        configs=ui_columns(st)
+                        configs['_item']=st.column_config.Column('Requested item')
+                        configs['approved']=st.column_config.CheckboxColumn('Use this price')
+                        basic_bids=st.data_editor(price_display,hide_index=True,key='simple_bid_review',column_config=configs,disabled=['_item'])
+                        basic_bids=basic_bids.drop(columns=['_item'])
+                        extra_columns=[c for c in bid_base.columns if c not in price_columns]
+                        extra_bids=bid_base[extra_columns].copy()
+                        detail_columns=price_detail_columns(ext.bids)
+                        if detail_columns:
+                            with st.expander('Details that need checking'):
+                                st.caption('Only details relevant to this quote are shown. Rows follow the same order as the prices above.')
+                                shown=st.data_editor(bid_base[detail_columns],hide_index=True,key='extra_bid_review',column_config=ui_columns(st))
+                                for column in shown.columns: extra_bids[column]=shown[column].to_numpy()
                         bid_df=combine_review(bid_base,basic_bids,extra_bids)
                     else:
                         bid_df=bid_base
                         st.warning('No item prices were found. Cancel this review and upload a quote containing prices, or save the supplier answers only.')
                     if rfq.questions:
                         st.markdown('**2. Check the supplier’s answers**')
-                        with st.expander('Questions in your request'):
-                            for question in rfq.questions:
-                                st.write(f'{question.id}: {question.label}' + (' — required' if question.mandatory else ''))
-                        answer_columns=['question_id','value','numeric_value','unit','certificate_state','expiry','approved','review_note']
+                        question_names={question.id:question.label for question in rfq.questions}
+                        required_ids={question.id for question in rfq.questions if question.mandatory}
+                        certificate_ids={question.id for question in rfq.questions if question.rule=='valid_certificate'}
+                        numeric_ids={question.id for question in rfq.questions if question.rule in {'min','max'}}
+                        answer_columns=['value','approved','review_note']
+                        if any(a.question_id in numeric_ids or a.numeric_value is not None for a in ext.answers): answer_columns[1:1]=['numeric_value','unit']
+                        if any(a.question_id in certificate_ids for a in ext.answers): answer_columns[1:1]=['certificate_state','expiry']
                         answer_base=pd.DataFrame([dump(a) for a in ext.answers],columns=list(Answer.model_fields))
                         if ext.answers:
-                            basic_answers=st.data_editor(answer_base[answer_columns],hide_index=True,key='simple_answer_review',column_config=ui_columns(st))
-                            with st.expander('More answer details — document references'):
-                                extra_answers=st.data_editor(answer_base[[c for c in answer_base.columns if c not in answer_columns]],hide_index=True,key='extra_answer_review',column_config=ui_columns(st))
+                            answer_display=answer_base[answer_columns].copy()
+                            answer_display.insert(0,'_question',[question_names.get(a.question_id,'Unknown question') + (' (required)' if a.question_id in required_ids else '') for a in ext.answers])
+                            configs=ui_columns(st)
+                            configs['_question']=st.column_config.Column('Supplier question',width='large')
+                            configs['value']=st.column_config.Column('Supplier answer',width='large')
+                            configs['approved']=st.column_config.CheckboxColumn('Checked')
+                            basic_answers=st.data_editor(answer_display,hide_index=True,key='simple_answer_review',column_config=configs,disabled=['_question'])
+                            basic_answers=basic_answers.drop(columns=['_question'])
+                            extra_columns=[c for c in answer_base.columns if c not in answer_columns]
+                            extra_answers=answer_base[extra_columns].copy()
+                            if any(not a.file or not a.locator or not a.excerpt for a in ext.answers):
+                                with st.expander('Missing document details for answers'):
+                                    st.caption('Complete these references before marking an answer as checked.')
+                                    shown=st.data_editor(answer_base[['file','locator','excerpt']],hide_index=True,key='extra_answer_review',column_config=ui_columns(st))
+                                    for column in shown.columns: extra_answers[column]=shown[column].to_numpy()
                             ans_df=combine_review(answer_base,basic_answers,extra_answers)
+                            missing_questions=[q for q in rfq.questions if q.mandatory and q.id not in {a.question_id for a in ext.answers}]
+                            for question in missing_questions: st.warning('Required answer not found: ' + question.label)
                         else:
                             ans_df=answer_base
                             st.info('No answers were found. Required questions still need answers before this supplier can pass your checks.')
@@ -919,10 +959,10 @@ def main():
                             for term in ext.commercials: st.write(f'**{term.name}:** {term.value}')
                     st.markdown('**Finish your check**')
                     bulk_note=st.text_input('Short note about what you checked',placeholder='I checked the prices against page 1 of the supplier quote.')
-                    st.caption('Add notes beside individual prices, or use the options below to approve the clear values you checked together.')
-                    bulk_bids=st.checkbox('I checked all clear prices against the document.',disabled=not ext.bids)
-                    bulk_answers=st.checkbox('I checked all listed answers against the document.',disabled=not ext.answers or not rfq.questions)
-                    st.caption('Unclear prices and discounts with conditions need a separate check under More price details.')
+                    st.caption('For a full check, enter one note and tick the boxes below. For a partial check, tick only the rows you checked and add a note beside each.')
+                    bulk_bids=st.checkbox('Use all clear prices I checked',disabled=not ext.bids)
+                    bulk_answers=st.checkbox('Mark all listed answers I checked as checked',disabled=not ext.answers or not rfq.questions)
+                    st.caption('Prices with missing details, duplicates, or conditions are skipped by the first box. Save them unchecked and fix them later if needed.')
                     identity=st.checkbox('This quote belongs to ' + p['supplier'] + '. It will replace any earlier quote saved for this supplier.')
                     commit=st.form_submit_button('Save quote and continue',type='primary')
                 if commit:
@@ -945,12 +985,15 @@ def main():
                                     a.review_note=bulk_note
                         for b in bids:
                             if b.line_id is not None and b.line_id not in known: raise ValueError('Unknown line ID: '+b.line_id)
-                            if b.approved and (b.file not in names or not b.locator or not b.excerpt or not b.review_note.strip()): raise ValueError('An approved price needs a document, page or row, text from that document, and your check note. Open More price details to fill missing information.')
+                            if b.approved and (b.file not in names or not b.locator or not b.excerpt or not b.review_note.strip()): raise ValueError('An approved price needs a document, page or row, text from that document, and your check note. Open Details that need checking to fill missing information.')
                         for a in answers:
                             if a.question_id not in {q.id for q in rfq.questions}: raise ValueError('Unknown question ID.')
-                            if a.approved and (a.file not in names or not a.locator or not a.excerpt or not a.review_note.strip()): raise ValueError('An approved answer needs a document reference, text from the document, and your check note. Open More answer details to fill missing information.')
+                            if a.approved and (a.file not in names or not a.locator or not a.excerpt or not a.review_note.strip()): raise ValueError('An approved answer needs a document reference, text from the document, and your check note. Add the missing details under Missing document details for answers.')
                         if not identity: raise ValueError('Tick the box to confirm this quote belongs to the selected supplier.')
                         if fingerprint(w['rfq'])!=p['rfq_hash']: raise ValueError('The request changed while the quote was being read. Cancel this review and read the quote again.')
+                        if bulk_bids:
+                            skipped=sum(not b.approved for b in bids)
+                            if skipped: st.session_state.review_notice=f'{skipped} prices still need checking and will not be used in the comparison.'
                         ext.bids=bids
                         ext.answers=answers
                         p['extraction']=dump(ext)
@@ -967,7 +1010,7 @@ def main():
                 if st.button('Cancel this quote review'):
                     st.session_state.pending=None
                     st.rerun()
-            with st.popover('View all suppliers and saved quotes'):
+            with st.expander('All suppliers and saved quotes'):
                 rows,qual,commercials=build_dataset(rfq,w['responses'],w['fx'])
                 status=[]
                 for s in w['suppliers']:
@@ -1107,8 +1150,8 @@ def main():
             st.download_button('Download activity history',json.dumps(w['events'],indent=2),'audit_events.json','application/json')
 
 
-def render_sources(st, files, key):
-    with st.expander('View the original documents'):
+def render_sources(st, files, key, expanded=False):
+    with st.expander('View the original documents',expanded=expanded):
         selected=st.selectbox('Choose a document',range(len(files)),format_func=lambda i:files[i]['name'],key=key)
         f=files[selected]
         raw=base64.b64decode(f['data'])
