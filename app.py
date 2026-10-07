@@ -475,6 +475,44 @@ def ai_json(client, model, schema, prompt, parts=None):
     return schema.model_validate_json(response.text)
 
 
+SOURCE_TEXT_WARNING='Check this value in the supplier document—the app could not match the supporting text.'
+
+
+def excerpt_matches_source(excerpt,text,filename,locator=''):
+    if not excerpt or not text: return False
+    if squash(excerpt) in squash(text): return True
+    if Path(filename).suffix.lower()!='.xlsx': return False
+    # Cell labels and row locators are added by our reader, not part of the quote.
+    location=re.fullmatch(r'Sheet\s+(.+?),\s*Row\s+(\d+)',locator.strip(),re.I)
+    if not location: return False
+    for line in text.splitlines():
+        row=re.match(r'Sheet\s+(.+?),\s*Row\s+(\d+):\s*(.*)',line,re.I)
+        if not row or row[1].casefold()!=location[1].casefold() or int(row[2])!=int(location[2]): continue
+        cells=re.sub(r'(^|\s*\|\s*)[A-Z]+=',lambda match:match[1],row[3])
+        return squash(excerpt) in squash(cells)
+    return False
+
+
+def clean_review_uncertainty(value):
+    value=value.strip()
+    if value.casefold() in {'none','null','n/a'}: return ''
+    return re.sub(r'^(?:None|null)\s+(?=Check this value)', '',value)
+
+
+def refresh_source_warnings(ext,files,text_cache):
+    for bid in ext.bids:
+        bid.uncertainty=clean_review_uncertainty(bid.uncertainty)
+        if SOURCE_TEXT_WARNING not in bid.uncertainty or Path(bid.file).suffix.lower()!='.xlsx': continue
+        file=next((file for file in files if file['name']==bid.file),None)
+        if not file: continue
+        key=hashlib.sha256(file['data'].encode()).hexdigest()
+        if key not in text_cache:
+            try: text_cache[key]=source_text(file['name'],base64.b64decode(file['data']))
+            except Exception: continue
+        if excerpt_matches_source(bid.excerpt,text_cache[key],bid.file,bid.locator):
+            bid.uncertainty=bid.uncertainty.replace(SOURCE_TEXT_WARNING,'').strip()
+
+
 def extract(client, model, rfq, supplier, files):
     parts, texts = prepare_sources(files)
     prompt = f'''Extract this complete supplier response bundle for target supplier {supplier}.
@@ -511,7 +549,8 @@ A vendor name mismatch must appear in warnings. This bundle is a REPLACEMENT sup
         if b.file not in names:
             b.file=''
             b.uncertainty += ' Invalid source filename.'
-        if b.file in texts and b.excerpt and squash(b.excerpt) not in squash(texts[b.file]):
+        b.uncertainty=clean_review_uncertainty(b.uncertainty)
+        if b.file in texts and b.excerpt and not excerpt_matches_source(b.excerpt,texts[b.file],b.file,b.locator):
             b.uncertainty += ' Check this value in the supplier document—the app could not match the supporting text.'
     ext.answers = [a for a in ext.answers if a.question_id in qids]
     for a in ext.answers:
@@ -1385,6 +1424,7 @@ def main():
             if p:
                 st.subheader('Check ' + p['supplier'] + '’s quote')
                 ext=Extraction.model_validate(p['extraction'])
+                refresh_source_warnings(ext,p['files'],st.session_state.setdefault('source_text_cache',{}))
                 no_quote_notices=[bid for bid in ext.bids if is_no_quote_notice(bid)]
                 ext.bids=[bid for bid in ext.bids if not is_no_quote_notice(bid)]
                 if no_quote_notices:
@@ -1484,7 +1524,7 @@ def main():
                                             if bid.excerpt: st.write('Text used by the app: '+bid.excerpt)
                                             if bid.uncertainty: st.caption('After verifying and correcting the issue, clear the “Details to check” field. Keep it if the issue is unresolved; the one-click confirmation will skip this price.')
                                             if bid.currency.strip().upper() not in w['fx'] and bid.currency.strip(): st.caption('A reference exchange rate is temporarily unavailable. The original quote is saved; this price cannot be compared in INR until a rate is available.')
-                                            if 'line_id' in detail_columns:
+                                            if 'line_id' in detail_columns and bid.line_id not in item_names:
                                                 options=[None]+list(item_names)
                                                 selected=st.selectbox('Which requested item is this?',options,index=options.index(bid.line_id) if bid.line_id in options else 0,format_func=lambda value:'Not matched' if value is None else item_names[value]+' — '+item_specs[value],key=f'match_bid_{index}')
                                                 extra_bids.loc[index,'line_id']=selected
