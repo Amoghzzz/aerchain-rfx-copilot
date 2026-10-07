@@ -1468,7 +1468,7 @@ def main():
                         extra_columns=[c for c in bid_base.columns if c not in price_columns]
                         extra_bids=bid_base[extra_columns].copy()
                         detail_columns=price_detail_columns(ext.bids)
-                        if detail_columns or any(bid_review_issues(bid,rfq.items,w['fx']) for bid in ext.bids):
+                        if any(bid_review_issues(bid,rfq.items,w['fx']) for bid in ext.bids):
                             st.markdown('<div class="review-section section-attention">Resolve quote details<small>Check the original document, correct the relevant fields, and confirm only prices you can verify. Leave unresolved prices unchecked.</small></div>',unsafe_allow_html=True)
                             with st.expander('Review items and correct their details',expanded=True):
                                 for index,bid in enumerate(ext.bids):
@@ -1516,7 +1516,7 @@ def main():
                             configs=ui_columns(st)
                             configs['_question']=st.column_config.Column('Question',width='large')
                             configs['value']=st.column_config.Column('Supplier answer',width='large')
-                            configs['approved']=st.column_config.CheckboxColumn('Checked')
+                            configs['approved']=st.column_config.CheckboxColumn('Answer checked',help='Confirm that this answer agrees with the supplier document. You can also use the single confirmation box below for all clear answers.')
                             basic_answers=st.data_editor(answer_display,hide_index=True,key='simple_answer_review',column_config=configs,disabled=['_question'])
                             basic_answers=basic_answers.drop(columns=['_question'])
                             if 'certificate_state' in basic_answers:
