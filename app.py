@@ -1892,18 +1892,52 @@ def main():
         if rows and st.button('Verify a price in its original document'):
             show_decision_source()
         snapshot=fingerprint({'rfq':w['rfq'],'responses':w['responses'],'fx':w['fx'],'fx_date':w['fx_date'],'fx_basis':w['fx_basis']})
+        st.subheader('Ask about your quotes')
+        st.caption('Ask a question, or choose an AI suggestion below. Answers use the saved quotes and your request.')
+        with st.form('ask_quote_question'):
+            query=st.text_input('Your question',key='buyer_custom_question',placeholder='Which item has the biggest price difference between suppliers?')
+            ask_submitted=st.form_submit_button('Ask question',type='primary')
+        answer_area=st.empty()
+        if ask_submitted:
+            if not query.strip():
+                st.warning('Enter a question first.')
+            else:
+                st.session_state.pop('answer',None)
+                st.session_state.pop('quick_answer',None)
+                with st.status('Preparing your answer…',expanded=True) as answer_status:
+                    st.write('Your question: '+query.strip())
+                    st.write('Checking the saved prices, supplier checks and terms. Waiting for the AI analysis…')
+                    result=call(lambda client:analyst(client,model,query,rfq,w,rows,qual,commercials),'Analysing your saved quotes…')
+                    if result:
+                        st.session_state.answer=result
+                        w['conversation'].append(result)
+                        answer_status.update(label='Your answer is ready',state='complete',expanded=False)
+                    else:
+                        answer_status.update(label='Could not prepare an answer. Your question is still in the box; you can retry.',state='error',expanded=True)
+        answer=st.session_state.get('answer')
+        if answer and answer['snapshot']==snapshot:
+            with answer_area.container():
+                st.html('<div id="custom-question-answer"></div>')
+                with st.container(border=True):
+                    render_answer_brief(st,answer,rfq)
+                    with st.popover('Download answer figures'):
+                        st.download_button('Answer table (CSV)',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
+            focus_token=fingerprint({'question':answer['question'],'snapshot':snapshot})
+            if st.session_state.get('_focused_custom_answer')!=focus_token:
+                st.session_state['_focused_custom_answer']=focus_token
+                st.html('<script>/* '+focus_token+' */ setTimeout(() => document.getElementById("custom-question-answer")?.scrollIntoView({behavior:"smooth",block:"start"}),150);</script>',unsafe_allow_javascript=True)
         st.subheader('Explore your buying options')
         st.caption('AI generates questions from this request and the saved data, then checks that the available analysis can answer them. Click for the calculated result.')
         rules=', '.join(q.label for q in rfq.questions if q.mandatory)
         if rules: st.caption('Required checks for this request: '+rules)
         question_snapshot=fingerprint({'scenario':snapshot,'model':model,'question_version':5})
         question_cache=st.session_state.get('ai_suggested_questions',{})
-        if question_cache.get('snapshot')!=question_snapshot:
+        if question_cache.get('snapshot')!=question_snapshot and not ask_submitted:
             question_cache={'snapshot':question_snapshot,'questions':[]}
             st.session_state.ai_suggested_questions=question_cache
             generated=call(lambda client:generate_contextual_questions(client,model,rfq,w,facts,rows,commercials),'Preparing answerable questions from your saved quotes…')
             if generated: question_cache['questions']=generated
-        prompts=question_cache['questions']
+        prompts=question_cache.get('questions',[]) if question_cache.get('snapshot')==question_snapshot else []
         selected=st.session_state.get('quick_answer')
         if selected and selected.get('snapshot')==snapshot:
             entry=next((entry for entry in prompts if entry['key']==selected.get('key')),None)
@@ -1916,7 +1950,11 @@ def main():
                 if st.session_state.get('_focused_question')!=focus_token:
                     st.session_state['_focused_question']=focus_token
                     st.html('<script>/* '+focus_token+' */ setTimeout(() => document.getElementById("buying-question-answer")?.scrollIntoView({behavior:"smooth",block:"start"}),150);</script>',unsafe_allow_javascript=True)
-        if not prompts: st.info('No supported AI suggestions are available. You can still ask a question about the saved data below.')
+        if not prompts: st.info('No supported AI suggestions are available. You can ask your own question in the box above.')
+        if st.button('Refresh AI suggestions'):
+            st.session_state.pop('ai_suggested_questions',None)
+            st.session_state.pop('quick_answer',None)
+            st.rerun()
         question_columns=st.columns(2)
         for index,entry in enumerate(prompts):
             with question_columns[index%2]:
@@ -1925,21 +1963,6 @@ def main():
                     st.session_state.quick_answer={'snapshot':snapshot,'key':entry['key']}
                     st.session_state.pop('answer',None)
                     st.rerun()
-        with st.expander('Ask a different question'):
-            st.caption('Ask about the saved prices, supplier checks or terms. Delivery capacity and final landed cost cannot be confirmed unless the documents provide the necessary facts.')
-            query=st.text_input('Your question',placeholder='For example: compare the quotes from two named suppliers.')
-            if st.button('Get answer',type='primary') and query.strip():
-                result=call(lambda client:analyst(client,model,query,rfq,w,rows,qual,commercials), 'Comparing your saved quotes and preparing an answer…')
-                if result:
-                    st.session_state.answer=result
-                    st.session_state.pop('quick_answer',None)
-                    w['conversation'].append(result)
-        answer=st.session_state.get('answer')
-        if answer and answer['snapshot']==snapshot:
-            with st.container(border=True):
-                render_answer_brief(st,answer,rfq)
-                with st.popover('Download answer figures'):
-                    st.download_button('Answer table (CSV)',csv_bytes(answer['table']),'analyst_answer.csv','text/csv')
         with st.popover('Currency details'):
             if not currencies: st.write('All quoted currencies are INR. No conversion is needed.')
             else:
@@ -1968,7 +1991,7 @@ def main():
                     st.rerun()
         with st.popover('Download comparison'):
             st.download_button('Price comparison (CSV)',csv_bytes(rows),'comparison_audit.csv','text/csv')
-            st.download_button('Lowest-cost buying plan (CSV)',csv_bytes(split['allocation']),'award_allocation.csv','text/csv')
+            st.download_button('Lowest-cost buying plan (CSV)' if split['complete'] else 'Partial allocation — not an award (CSV)',csv_bytes(split['allocation']),'award_allocation.csv' if split['complete'] else 'partial_allocation.csv','text/csv')
             st.download_button('Questions and answers (JSON)',json.dumps(w['conversation'],indent=2),'analyst_conversation.json','application/json')
 
 
