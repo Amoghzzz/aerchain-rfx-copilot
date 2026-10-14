@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import zipfile
 from typing import Literal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
 VERSION = 2
 STATUS_OK = {'CONFIRMED', 'NORMALIZED'}

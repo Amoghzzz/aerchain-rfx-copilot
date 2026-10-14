@@ -148,13 +148,32 @@ def rerun(w,action=None,details=None):
 def records(frame,model):
     rows=json.loads(frame.to_json(orient='records',double_precision=15))
     cleaned=[]
-    for row in rows:
+    issues=[]
+    for position,row in enumerate(rows,1):
+        # Dynamic editors can send an untouched add-row containing null cells.
+        # Ignore only empty request rows, never rows with buyer-entered content.
+        automatic={'origin','creation_origin'}
+        if model in (core.Item,core.Question,core.Term) and not any(
+            value is not None and (not isinstance(value,str) or bool(value.strip()))
+            and (model.model_fields[key].is_required() or value != model.model_fields[key].default)
+            for key,value in row.items() if key not in automatic):
+            continue
         clean={}
         for key,value in row.items():
             field=model.model_fields[key]
             if value is None and not field.is_required() and field.default is not None: continue
             clean[key]=value
-        cleaned.append(model.model_validate(clean))
+        try:
+            cleaned.append(model.model_validate(clean))
+        except core.ValidationError as exc:
+            fields=[]
+            for error in exc.errors():
+                key=str(error['loc'][0])
+                label=LABELS.get(key,key.replace('_',' '))
+                fields.append(label)
+            section={core.Item:'Items',core.Question:'Supplier questions',core.Term:'Commercial requirements'}.get(model,model.__name__)
+            issues.append(f'{section}, row {position}: complete or correct '+', '.join(dict.fromkeys(fields))+'. Remove the row if you do not need it.')
+    if issues: raise ValueError('\n\n'.join(issues))
     return cleaned
 
 def provenance(updated,previous):
