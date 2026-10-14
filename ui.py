@@ -395,7 +395,7 @@ def request_screen(w):
                 st.download_button('Item list',core.csv_bytes([core.dump(i) for i in rfq.items]),'rfq_items.csv','text/csv')
                 st.download_button('Invitation email draft','Subject: Request for quotation — '+rfq.title+'\n\nPlease quote the items and answer the supplier questions.\n\n'+core.request_text(rfq),'supplier_invitation.txt')
             if st.button('Mark invitations prepared & review quotes',type='primary'):
-                w['demo_invited_suppliers']=w['suppliers'].copy(); st.session_state.step='Review quotes'; rerun(w,'Invitations prepared',{'emails_sent':False})
+                w['demo_invited_suppliers']=w['suppliers'].copy(); st.session_state.next_step='Review quotes'; rerun(w,'Invitations prepared',{'emails_sent':False})
 
 def new_pending(w,supplier,files=None,extraction=None):
     files=files or []
@@ -514,7 +514,7 @@ def quote_screen(w):
                     w['quote_versions'][pending['supplier']]=w['quote_versions'][pending['supplier']][-10:]
                     updated['revision']=previous.get('revision',1)+1
                 w['responses'][pending['supplier']]=updated; w['pending_review']=None; w['final_selection']=None
-                st.session_state.step='Compare quotes'
+                st.session_state.next_step='Compare quotes'
                 rerun(w,'Quote committed',{'supplier':pending['supplier'],'evidence_warnings':problems})
             else:
                 w['pending_review']=updated; rerun(w,'Review draft saved',{'evidence_warnings':problems})
@@ -752,6 +752,9 @@ def main():
     w=st.session_state.work
     sidebar(w)
     steps=['Create request','Review quotes','Compare quotes']
+    # Apply button-driven navigation before creating the navigation widget.
+    destination=st.session_state.pop('next_step',None)
+    if destination in steps: st.session_state.step=destination
     if st.session_state.get('step') not in steps: st.session_state.step='Create request'
     step=st.segmented_control('Your sourcing workflow',steps,key='step',required=True)
     header(w,step)
