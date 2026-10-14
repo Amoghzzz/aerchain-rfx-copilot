@@ -216,6 +216,29 @@ def provenance(updated,previous):
 def encode_files(files):
     return [{'name':f['name'],'data':base64.b64encode(f['data']).decode(),'hash':hashlib.sha256(f['data']).hexdigest()} for f in files]
 
+def ai_failure_details(exc):
+    """Report categories, never provider messages, document text or credentials."""
+    status=getattr(exc,'code',None)
+    if not isinstance(status,int): status=getattr(exc,'status_code',None)
+    if not isinstance(status,int): status=None
+    if isinstance(exc,core.ValidationError):
+        return 'RESPONSE_FORMAT','Google returned data that did not match the quote format. Try a shorter email or one supplier quotation at a time.',status
+    if isinstance(exc,core.AIResponseError):
+        return exc.category,exc.safe_message,status
+    if status in (401,403):
+        return 'ACCESS_DENIED','Google rejected access. Check the configured service account and its Vertex AI permissions.',status
+    if status==429:
+        return 'RATE_LIMIT','Google reported a quota or rate limit. Wait before retrying and check your Google project quota.',status
+    if status==404:
+        return 'MODEL_UNAVAILABLE','Google could not find the configured model or resource. Check the model name and region in Streamlit Secrets.',status
+    if status==400:
+        return 'REQUEST_REJECTED','Google rejected the AI request format. Share this diagnostic category so the extraction configuration can be checked.',status
+    if status and status>=500:
+        return 'GOOGLE_SERVICE','Google reported a service error. Wait briefly and retry.',status
+    if isinstance(exc,(TimeoutError,ConnectionError)) or 'timeout' in type(exc).__name__.lower():
+        return 'CONNECTION_TIMEOUT','The AI connection timed out. Retry with a shorter email or smaller document bundle.',status
+    return 'UNEXPECTED_ERROR','The AI operation failed unexpectedly. Share the diagnostic category and reference below so we can investigate.',status
+
 def ai(action,label):
     if not (secret('GEMINI_API_KEY') or secret('GCP_SERVICE_ACCOUNT')):
         st.info('AI is not configured yet. You can create and review requests manually, or explore the demo.'); return None
@@ -232,10 +255,12 @@ def ai(action,label):
         else: client=genai.Client(api_key=secret('GEMINI_API_KEY'),http_options=types.HttpOptions(timeout=120000))
         with st.spinner(label),client:
             return action(client,secret('GEMINI_MODEL','gemini-2.5-flash'))
-    except Exception:
+    except Exception as exc:
         reference=uuid.uuid4().hex[:8]
-        logging.warning('AI request failed reference=%s',reference)  # no documents or credentials in UI/logs
-        st.error(f'AI could not finish this request. Your saved work is unchanged. Retry later. Reference: {reference}')
+        category,message,status=ai_failure_details(exc)
+        logging.warning('AI request failed reference=%s category=%s http_status=%s',reference,category,status)
+        st.error(message+' Your saved work is unchanged.')
+        st.caption(f'Diagnostic: {category} · HTTP status: {status or "unavailable"} · Reference: {reference}')
         return None
 
 def source_view(files,key):
