@@ -66,6 +66,11 @@ def show_request_issues(errors, rfq):
             st.write(f'• **Quantities:** enter quantities for {len(rows)} item(s) in the table above.')
         elif action == 'required questions need a pass rule.':
             st.write(f'• **Supplier checks:** review {len(rows)} question(s). Choose a pass rule, or turn off “Must pass to qualify” for informational questions.')
+        elif action == 'Resolve the outstanding requirement questions before finishing.':
+            st.write('**Your decisions still needed:**')
+            for question in rfq.open_questions:
+                st.write('• ' + question)
+            st.caption('Answer these in the request fields, then tick them in “Your decisions before sending” near the top of the editor.')
         elif rows:
             st.write(f'• **{len(rows)} row(s):** {action}')
         else:
@@ -175,6 +180,23 @@ def records(frame,model):
             issues.append(f'{section}, row {position}: complete or correct '+', '.join(dict.fromkeys(fields))+'. Remove the row if you do not need it.')
     if issues: raise ValueError('\n\n'.join(issues))
     return cleaned
+
+def buyer_decisions(rfq):
+    if not rfq.open_questions:
+        st.caption('No outstanding buyer questions. Review the request details below.')
+        return []
+    resolved=[]
+    with st.container(border=True):
+        st.subheader('Your decisions before sending')
+        st.warning(f'{len(rfq.open_questions)} buyer question(s) need your review. These are for you to answer, before suppliers receive the request.')
+        st.write('Record each answer in the scope, items, or commercial requirements below. Then tick the matching question to confirm it is addressed. You can save a draft while questions remain.')
+        for question in rfq.open_questions:
+            workspace_id=st.session_state.get('work',{}).get('workspace_id','preview')
+            key='buyer_decision_'+hashlib.sha256((workspace_id+'|'+str(rfq.revision)+'|'+question).encode()).hexdigest()[:20]
+            if st.checkbox(question,key=key,help='Tick only after recording your answer in the request. This is not a question for suppliers.'):
+                resolved.append(question)
+        st.caption('Ticked questions are marked resolved when you select Save draft or Finish request.')
+    return resolved
 
 def provenance(updated,previous):
     lookup={getattr(x,'id',x.name if hasattr(x,'name') else ''):x for x in previous}
@@ -329,17 +351,17 @@ def request_screen(w):
         with st.form('rfq_editor'):
             title=st.text_input('Request title',rfq.title)
             scope=st.text_area('Scope',rfq.scope,height=80)
+            resolved=buyer_decisions(rfq)
             st.write('**Items and specifications**')
             item_cols=['id','description','specification','quantity','uom','location','max_lead_days','origin']
             items=st.data_editor(pd.DataFrame([core.dump(i) for i in rfq.items],columns=item_cols),num_rows='dynamic',hide_index=True,column_config=columns(),key='items_'+str(rfq.revision))
             st.caption('Source labels identify suggestions. Buyer confirmation is recorded separately when the request is finished.')
-            st.write('**Required supplier checks**')
+            st.write('**Questions for suppliers and qualification checks**')
             st.caption('“Must pass to qualify” excludes suppliers who fail the selected rule. Leave it off for questions that only collect information, such as payment terms or freight.')
             qcols=['id','label','mandatory','rule','threshold','unit','origin']
             qs=st.data_editor(pd.DataFrame([core.dump(q) for q in rfq.questions],columns=qcols),num_rows='dynamic',hide_index=True,column_config=columns(),key='questions_'+str(rfq.revision))
             st.write('**Commercial requirements**')
             terms=st.data_editor(pd.DataFrame([core.dump(t) for t in rfq.terms],columns=['name','value','origin']),num_rows='dynamic',hide_index=True,column_config=columns(),key='terms_'+str(rfq.revision))
-            resolved=st.multiselect('Requirement questions you have resolved',rfq.open_questions)
             confirm=st.checkbox('I checked the scope, specifications, quantities, required rules and terms.')
             a,b=st.columns(2)
             draft=a.form_submit_button('Save draft',width='stretch')
