@@ -19,7 +19,7 @@ ROOT=Path(__file__).parent
 FORMATS=['pdf','xlsx','docx','png','jpg','jpeg','txt','csv','eml']
 LABELS={
     'id':'Reference','description':'Item','specification':'Specifications / dimensions','quantity':'Quantity','uom':'Unit',
-    'location':'Delivery location','max_lead_days':'Maximum lead time (days)','label':'Supplier question','mandatory':'Required',
+    'location':'Delivery location','max_lead_days':'Maximum lead time (days)','label':'Supplier question','mandatory':'Must pass to qualify',
     'rule':'Pass rule','threshold':'Limit','unit':'Unit','name':'Term','value':'Answer / details','origin':'Source of requirement',
     'line_id':'Requested item','vendor_description':'Supplier item / specifications','price':'Quoted price','currency':'Currency',
     'quoted_uom':'Quoted unit','price_basis':'Price per how many units?','file':'Source file','locator':'Page / row / line',
@@ -45,6 +45,35 @@ def columns():
     for key in ['approved','mandatory','specification_checked','costs_checked','constraints_checked','excluded','discount_conditional']:
         result[key]=st.column_config.CheckboxColumn(LABELS[key])
     return result
+
+def request_issue_groups(errors, rfq):
+    groups = {}
+    names = {x.id: x.description for x in rfq.items}
+    names.update({x.id: x.label for x in rfq.questions})
+    for message in errors:
+        if ': ' in message and message.split(': ', 1)[0] in names:
+            reference, action = message.split(': ', 1)
+            groups.setdefault(action, []).append({'Reference': reference, 'Item / question': names[reference], 'Action': action})
+        else:
+            groups.setdefault(message, [])
+    return groups
+
+def show_request_issues(errors, rfq):
+    st.error('Your request needs a few details before it can be finished.')
+    details = []
+    for action, rows in request_issue_groups(errors, rfq).items():
+        if action == 'supply a quantity before finishing.':
+            st.write(f'• **Quantities:** enter quantities for {len(rows)} item(s) in the table above.')
+        elif action == 'required questions need a pass rule.':
+            st.write(f'• **Supplier checks:** review {len(rows)} question(s). Choose a pass rule, or turn off “Must pass to qualify” for informational questions.')
+        elif rows:
+            st.write(f'• **{len(rows)} row(s):** {action}')
+        else:
+            st.write('• ' + action)
+        details.extend(rows)
+    if details:
+        with st.expander(f'View affected items and questions ({len(details)})'):
+            st.dataframe(pd.DataFrame(details), hide_index=True, width='stretch')
 
 def styles():
     st.markdown('''<style>
@@ -253,8 +282,7 @@ def request_screen(w):
                 else:
                     try:
                         parts=core.prepare_sources(files)[0] if files else []
-                        result=ai(lambda client,model:core.ai_json(client,model,core.RFQ,
-                            'Draft an RFQ from this brief and documents: '+brief+' Preserve exact provided specifications and quantities. Use stable ITEM-001 and Q-001 references. Missing quantity is null. Mark suggestions AI SUGGESTED. Do not invent obligations. Required rules only when explicitly provided. List unresolved questions.',parts),'Drafting your request…')
+                        result=ai(lambda client,model:core.draft_request(client,model,brief,parts),'Drafting your request…')
                         if result:
                             w['rfq']=core.dump(result); w['request_sources']=encode_files(files); rerun(w,'AI request draft created')
                     except Exception as exc: st.error(str(exc)[:300])
@@ -287,6 +315,7 @@ def request_screen(w):
             items=st.data_editor(pd.DataFrame([core.dump(i) for i in rfq.items],columns=item_cols),num_rows='dynamic',hide_index=True,column_config=columns(),key='items_'+str(rfq.revision))
             st.caption('Source labels identify suggestions. Buyer confirmation is recorded separately when the request is finished.')
             st.write('**Required supplier checks**')
+            st.caption('“Must pass to qualify” excludes suppliers who fail the selected rule. Leave it off for questions that only collect information, such as payment terms or freight.')
             qcols=['id','label','mandatory','rule','threshold','unit','origin']
             qs=st.data_editor(pd.DataFrame([core.dump(q) for q in rfq.questions],columns=qcols),num_rows='dynamic',hide_index=True,column_config=columns(),key='questions_'+str(rfq.revision))
             st.write('**Commercial requirements**')
@@ -302,7 +331,7 @@ def request_screen(w):
                     open_questions=[q for q in rfq.open_questions if q not in resolved],resolved_questions=rfq.resolved_questions+resolved,revision=rfq.revision)
                 errors=core.validate_rfq(candidate,publish=finish)
                 if finish and not confirm: errors.append('Confirm your request before finishing.')
-                if errors: st.error(' '.join(errors))
+                if errors: show_request_issues(errors,candidate)
                 else: w['rfq']=core.dump(candidate); w['published']=finish; rerun(w,'RFQ finished' if finish else 'Draft saved',{'confirmed':confirm,'revision':rfq.revision})
             except Exception as exc: st.error('Check your request: '+str(exc)[:500])
     if w['request_sources']:
